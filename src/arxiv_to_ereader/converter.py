@@ -202,8 +202,9 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
                         svg.decompose()
                         soup_modified = True
 
-                    # Fix 8: Remove broken internal fragment links
-                    # Citations often link to #bib.bibXXX which may not exist
+                    # Fix 8: Remove broken/external links
+                    # - Citations often link to #bib.bibXXX which may not exist
+                    # - External http(s) links may cause Kindle rejection
                     for a in soup.find_all("a", href=True):
                         href = a.get("href", "")
                         if href.startswith("#"):
@@ -213,6 +214,10 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
                                 # Remove href but keep the link text
                                 del a["href"]
                                 soup_modified = True
+                        elif href.startswith(("http://", "https://")):
+                            # Remove external links (Kindle may reject these)
+                            del a["href"]
+                            soup_modified = True
 
                     # Fix 9: Fix block elements inside inline elements
                     # Convert span containing div/table/figure to div

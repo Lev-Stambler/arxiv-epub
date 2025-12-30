@@ -94,19 +94,17 @@ figcaption, .ltx_caption {
 
 /* Tables */
 table {
+    width: 100%;
     max-width: 100%;
     border-collapse: collapse;
     margin: 1.5em 0;
-    font-size: 0.85em;
-    display: block;
-    word-wrap: break-word;
+    font-size: 1em;
 }
 
 th, td {
     border: 1px solid #ccc;
-    padding: 0.4em 0.6em;
+    padding: 0.5em;
     text-align: left;
-    word-wrap: break-word;
 }
 
 th {
@@ -114,13 +112,8 @@ th {
     font-weight: bold;
 }
 
-/* Ensure table rows and cells don't overflow */
 tr {
     page-break-inside: avoid;
-}
-
-td, th {
-    max-width: 200px;
 }
 
 /* Code and preformatted text */
@@ -391,6 +384,7 @@ math[display="block"] {
 
 .math-image.math-display {
     display: block;
+    min-width: 50%;
     max-width: 100%;
     margin: 0 auto;
 }

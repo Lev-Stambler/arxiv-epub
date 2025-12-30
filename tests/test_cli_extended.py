@@ -7,7 +7,7 @@ import respx
 from httpx import Response
 from typer.testing import CliRunner
 
-from arxiv_epub.cli import app
+from arxiv_to_ereader.cli import app
 
 runner = CliRunner()
 

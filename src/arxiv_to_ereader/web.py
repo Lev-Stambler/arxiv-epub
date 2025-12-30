@@ -1,28 +1,29 @@
-"""Streamlit web interface for arxiv-epub."""
+"""Streamlit web interface for arxiv-to-ereader."""
 
+import shutil
 import tempfile
 from pathlib import Path
 
 import streamlit as st
 
-from arxiv_epub.converter import convert_to_epub
-from arxiv_epub.fetcher import (
+from arxiv_to_ereader.converter import OutputFormat, convert_to_epub
+from arxiv_to_ereader.fetcher import (
     ArxivFetchError,
     ArxivHTMLNotAvailable,
     fetch_paper,
     normalize_arxiv_id,
 )
-from arxiv_epub.parser import parse_paper
+from arxiv_to_ereader.parser import parse_paper
 
 st.set_page_config(
-    page_title="arXiv to EPUB",
+    page_title="arXiv to E-Reader",
     page_icon="📚",
     layout="centered",
 )
 
-st.title("📚 arXiv to EPUB Converter")
+st.title("📚 arXiv to E-Reader Converter")
 st.markdown(
-    "Convert arXiv papers to EPUB format for easy reading on your Kindle or e-reader."
+    "Convert arXiv papers to EPUB or Kindle formats for easy reading on your e-reader."
 )
 
 # Input section
@@ -52,24 +53,60 @@ else:
 # Options
 st.subheader("Options")
 
-col1, col2 = st.columns(2)
+col1, col2, col3 = st.columns(3)
 
 with col1:
-    style_preset = st.selectbox(
-        "Style preset",
-        ["default", "compact", "large-text"],
-        help="Choose a style preset for the EPUB",
+    output_format = st.selectbox(
+        "Output format",
+        ["EPUB", "AZW3 (Kindle)", "MOBI"],
+        help="Choose the output format. AZW3 is recommended for Kindle devices.",
     )
 
 with col2:
+    style_preset = st.selectbox(
+        "Style preset",
+        ["default", "compact", "large-text"],
+        help="Choose a style preset for the ebook",
+    )
+
+with col3:
     download_images = st.checkbox(
         "Include images",
         value=True,
         help="Download and embed images (unchecked = faster, smaller files)",
     )
 
+# Map display names to OutputFormat enum
+format_map = {
+    "EPUB": OutputFormat.EPUB,
+    "AZW3 (Kindle)": OutputFormat.AZW3,
+    "MOBI": OutputFormat.MOBI,
+}
+selected_format = format_map[output_format]
+
+# Check if Calibre is available for Kindle formats
+calibre_available = shutil.which("ebook-convert") is not None
+if selected_format in (OutputFormat.AZW3, OutputFormat.MOBI) and not calibre_available:
+    st.warning(
+        "⚠️ Calibre is required for AZW3/MOBI conversion but was not found. "
+        "Please install Calibre or select EPUB format."
+    )
+
+# Get file extension and mime type
+format_extensions = {
+    OutputFormat.EPUB: (".epub", "application/epub+zip"),
+    OutputFormat.AZW3: (".azw3", "application/octet-stream"),
+    OutputFormat.MOBI: (".mobi", "application/x-mobipocket-ebook"),
+}
+file_ext, mime_type = format_extensions[selected_format]
+
 # Convert button
-if st.button("Convert to EPUB", type="primary", disabled=not paper_inputs):
+button_label = f"Convert to {output_format.split()[0]}"
+convert_disabled = not paper_inputs or (
+    selected_format in (OutputFormat.AZW3, OutputFormat.MOBI) and not calibre_available
+)
+
+if st.button(button_label, type="primary", disabled=convert_disabled):
     results = []
 
     progress_bar = st.progress(0)
@@ -92,17 +129,19 @@ if st.button("Convert to EPUB", type="primary", disabled=not paper_inputs):
             status_text.text(f"Parsing {paper_id}...")
             paper = parse_paper(html, paper_id)
 
-            # Convert to EPUB
-            status_text.text(f"Converting {paper_id} to EPUB...")
+            # Convert to selected format
+            format_name = selected_format.value.upper()
+            status_text.text(f"Converting {paper_id} to {format_name}...")
 
-            with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=file_ext, delete=False) as tmp:
                 output_path = Path(tmp.name)
 
-            epub_path = convert_to_epub(
+            ebook_path = convert_to_epub(
                 paper,
                 output_path=output_path,
                 style_preset=style_preset,
                 download_images=download_images,
+                output_format=selected_format,
             )
 
             results.append(
@@ -111,7 +150,7 @@ if st.button("Convert to EPUB", type="primary", disabled=not paper_inputs):
                     "paper_id": paper_id,
                     "title": paper.title,
                     "authors": paper.authors,
-                    "path": epub_path,
+                    "path": ebook_path,
                 }
             )
 
@@ -145,13 +184,13 @@ if st.button("Convert to EPUB", type="primary", disabled=not paper_inputs):
 
             # Read file and provide download
             with open(result["path"], "rb") as f:
-                epub_data = f.read()
+                ebook_data = f.read()
 
             st.download_button(
-                label=f"📥 Download {result['paper_id']}.epub",
-                data=epub_data,
-                file_name=f"{result['paper_id'].replace('/', '_')}.epub",
-                mime="application/epub+zip",
+                label=f"📥 Download {result['paper_id']}{file_ext}",
+                data=ebook_data,
+                file_name=f"{result['paper_id'].replace('/', '_')}{file_ext}",
+                mime=mime_type,
             )
 
             with st.expander("Paper details"):
@@ -166,7 +205,7 @@ st.markdown(
     """
     <div style="text-align: center; color: #666; font-size: 0.9em;">
         <p>
-            <a href="https://github.com/Lev-Stambler/arxiv-epub" target="_blank">GitHub</a> •
+            <a href="https://github.com/Lev-Stambler/arxiv-to-ereader" target="_blank">GitHub</a> •
             <a href="https://arxiv.org" target="_blank">arXiv</a>
         </p>
         <p>Made with ❤️ for researchers</p>

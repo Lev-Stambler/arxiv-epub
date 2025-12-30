@@ -1,1 +1,1 @@
-"""Tests for arxiv-epub."""
+"""Tests for arxiv-to-ereader."""

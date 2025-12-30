@@ -41,6 +41,8 @@ class Paper:
     figures: list[Figure] = field(default_factory=list)
     references_html: str | None = None
     base_url: str | None = None
+    # Map of original image src -> absolute URL for ALL images in the paper
+    all_images: dict[str, str] = field(default_factory=dict)
 
 
 def _clean_text(text: str) -> str:
@@ -222,6 +224,37 @@ def _extract_figures(soup: BeautifulSoup, base_url: str | None = None) -> list[F
     return figures
 
 
+def _extract_all_images(soup: BeautifulSoup, base_url: str | None = None) -> dict[str, str]:
+    """Extract ALL image URLs from the HTML and return a mapping of original to absolute URLs.
+
+    This finds images everywhere - in figures, inline, tables, etc.
+    """
+    image_map = {}
+
+    # Find all img tags anywhere in the document
+    for img in soup.find_all("img"):
+        src = img.get("src", "")
+        if src and not src.startswith("data:"):  # Skip data URIs
+            if base_url:
+                absolute_url = urljoin(base_url, src)
+            else:
+                absolute_url = src
+            # Map original src to absolute URL
+            image_map[src] = absolute_url
+
+    # Also find SVG images that might be linked
+    for svg_use in soup.select("use[href], use[xlink\\:href]"):
+        href = svg_use.get("href") or svg_use.get("xlink:href", "")
+        if href and not href.startswith("#") and not href.startswith("data:"):
+            if base_url:
+                absolute_url = urljoin(base_url, href)
+            else:
+                absolute_url = href
+            image_map[href] = absolute_url
+
+    return image_map
+
+
 def _extract_references(soup: BeautifulSoup) -> str | None:
     """Extract references section HTML."""
     refs = soup.select_one(".ltx_bibliography, #references, .references")
@@ -257,4 +290,5 @@ def parse_paper(html: str, paper_id: str, base_url: str | None = None) -> Paper:
         figures=_extract_figures(soup, base_url),
         references_html=_extract_references(soup),
         base_url=base_url,
+        all_images=_extract_all_images(soup, base_url),
     )

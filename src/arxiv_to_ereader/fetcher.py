@@ -98,7 +98,7 @@ def fetch_paper(paper_id_or_url: str, timeout: float = 30.0) -> tuple[str, str]:
     url = get_html_url(paper_id)
 
     headers = {
-        "User-Agent": "arxiv-epub/0.1.0 (https://github.com/Lev-Stambler/arxiv-epub)",
+        "User-Agent": "arxiv-to-ereader/0.1.0 (https://github.com/Lev-Stambler/arxiv-to-ereader)",
         "Accept": "text/html,application/xhtml+xml",
     }
 
@@ -137,7 +137,7 @@ async def fetch_paper_async(paper_id_or_url: str, timeout: float = 30.0) -> tupl
     url = get_html_url(paper_id)
 
     headers = {
-        "User-Agent": "arxiv-epub/0.1.0 (https://github.com/Lev-Stambler/arxiv-epub)",
+        "User-Agent": "arxiv-to-ereader/0.1.0 (https://github.com/Lev-Stambler/arxiv-to-ereader)",
         "Accept": "text/html,application/xhtml+xml",
     }
 

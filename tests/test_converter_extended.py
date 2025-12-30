@@ -7,8 +7,8 @@ import pytest
 import respx
 from httpx import Response
 
-from arxiv_epub.converter import _download_image, convert_to_epub
-from arxiv_epub.parser import Figure, Paper, Section
+from arxiv_to_ereader.converter import _download_image, convert_to_epub
+from arxiv_to_ereader.parser import Figure, Paper, Section
 
 
 class TestImageDownload:
@@ -113,6 +113,7 @@ class TestConverterWithImages:
                     image_url=image_url,
                 )
             ],
+            all_images={image_url: image_url},
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -148,6 +149,7 @@ class TestConverterWithImages:
                     image_url=image_url,
                 )
             ],
+            all_images={image_url: image_url},
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -1,4 +1,4 @@
-"""Command-line interface for arxiv-epub."""
+"""Command-line interface for arxiv-to-ereader."""
 
 import asyncio
 from pathlib import Path
@@ -8,20 +8,20 @@ import typer
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from arxiv_epub import __version__
-from arxiv_epub.converter import convert_to_epub
-from arxiv_epub.fetcher import (
+from arxiv_to_ereader import __version__
+from arxiv_to_ereader.converter import OutputFormat, convert_to_epub
+from arxiv_to_ereader.fetcher import (
     ArxivFetchError,
     ArxivHTMLNotAvailable,
     fetch_paper,
     fetch_papers_batch,
     normalize_arxiv_id,
 )
-from arxiv_epub.parser import parse_paper
+from arxiv_to_ereader.parser import parse_paper
 
 app = typer.Typer(
-    name="arxiv-epub",
-    help="Convert arXiv HTML papers to EPUB for Kindle.",
+    name="arxiv-to-ereader",
+    help="Convert arXiv HTML papers to EPUB and Kindle formats.",
     add_completion=False,
 )
 console = Console()
@@ -30,7 +30,7 @@ console = Console()
 def version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
-        console.print(f"arxiv-epub version {__version__}")
+        console.print(f"arxiv-to-ereader version {__version__}")
         raise typer.Exit()
 
 
@@ -47,9 +47,17 @@ def convert(
         typer.Option(
             "--output",
             "-o",
-            help="Output directory for EPUB files",
+            help="Output directory for ebook files",
         ),
     ] = None,
+    format: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format: epub, mobi, or azw3 (Kindle)",
+        ),
+    ] = "epub",
     style: Annotated[
         str,
         typer.Option(
@@ -76,18 +84,27 @@ def convert(
         ),
     ] = None,
 ) -> None:
-    """Convert arXiv papers to EPUB format.
+    """Convert arXiv papers to EPUB or Kindle format.
 
     Examples:
 
-        arxiv-epub 2402.08954
+        arxiv-to-ereader 2402.08954
 
-        arxiv-epub 2402.08954 2401.12345 -o ~/kindle/
+        arxiv-to-ereader 2402.08954 --format azw3
 
-        arxiv-epub https://arxiv.org/abs/2402.08954 --style large-text
+        arxiv-to-ereader 2402.08954 2401.12345 -o ~/kindle/ -f mobi
+
+        arxiv-to-ereader https://arxiv.org/abs/2402.08954 --style large-text
     """
     if style not in ("default", "compact", "large-text"):
         console.print(f"[red]Error:[/red] Invalid style '{style}'. Use default, compact, or large-text.")
+        raise typer.Exit(1)
+
+    # Validate format
+    try:
+        output_format = OutputFormat(format.lower())
+    except ValueError:
+        console.print(f"[red]Error:[/red] Invalid format '{format}'. Use epub, mobi, or azw3.")
         raise typer.Exit(1)
 
     # Create output directory if specified
@@ -96,9 +113,9 @@ def convert(
 
     # Process single paper or batch
     if len(papers) == 1:
-        _convert_single(papers[0], output, style, not no_images)
+        _convert_single(papers[0], output, style, not no_images, output_format)
     else:
-        _convert_batch(papers, output, style, not no_images)
+        _convert_batch(papers, output, style, not no_images, output_format)
 
 
 def _convert_single(
@@ -106,6 +123,7 @@ def _convert_single(
     output_dir: Path | None,
     style: str,
     download_images: bool,
+    output_format: OutputFormat,
 ) -> None:
     """Convert a single paper."""
     with Progress(
@@ -139,25 +157,27 @@ def _convert_single(
         # Parse HTML
         paper = parse_paper(html, paper_id)
 
-        progress.update(task, description=f"Converting {paper_id} to EPUB...")
+        format_name = output_format.value.upper()
+        progress.update(task, description=f"Converting {paper_id} to {format_name}...")
 
         # Determine output path
         if output_dir:
-            output_path = output_dir / f"{paper_id.replace('/', '_')}.epub"
+            output_path = output_dir / f"{paper_id.replace('/', '_')}.{output_format.value}"
         else:
             output_path = None
 
-        # Convert to EPUB
-        epub_path = convert_to_epub(
+        # Convert to ebook
+        ebook_path = convert_to_epub(
             paper,
             output_path=output_path,
             style_preset=style,
             download_images=download_images,
+            output_format=output_format,
         )
 
         progress.stop()
 
-    console.print(f"[green]Success![/green] Created: {epub_path}")
+    console.print(f"[green]Success![/green] Created: {ebook_path}")
     console.print(f"  Title: {paper.title}")
     console.print(f"  Authors: {', '.join(paper.authors)}")
 
@@ -167,9 +187,11 @@ def _convert_batch(
     output_dir: Path | None,
     style: str,
     download_images: bool,
+    output_format: OutputFormat,
 ) -> None:
     """Convert multiple papers."""
-    console.print(f"Converting {len(paper_inputs)} papers...")
+    format_name = output_format.value.upper()
+    console.print(f"Converting {len(paper_inputs)} papers to {format_name}...")
 
     # Fetch all papers concurrently
     with Progress(
@@ -200,19 +222,20 @@ def _convert_batch(
 
             # Determine output path
             if output_dir:
-                output_path = output_dir / f"{paper_id.replace('/', '_')}.epub"
+                output_path = output_dir / f"{paper_id.replace('/', '_')}.{output_format.value}"
             else:
                 output_path = None
 
-            # Convert to EPUB
-            epub_path = convert_to_epub(
+            # Convert to ebook
+            ebook_path = convert_to_epub(
                 paper,
                 output_path=output_path,
                 style_preset=style,
                 download_images=download_images,
+                output_format=output_format,
             )
 
-            console.print(f"[green]Created:[/green] {epub_path}")
+            console.print(f"[green]Created:[/green] {ebook_path}")
             success_count += 1
 
         except Exception as e:

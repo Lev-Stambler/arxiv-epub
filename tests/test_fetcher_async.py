@@ -4,7 +4,7 @@ import pytest
 import respx
 from httpx import Response
 
-from arxiv_epub.fetcher import (
+from arxiv_to_ereader.fetcher import (
     ArxivHTMLNotAvailable,
     fetch_paper_async,
     fetch_papers_batch,

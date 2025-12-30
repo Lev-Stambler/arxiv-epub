@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in arxiv-epub!
+Thanks for your interest in arxiv-to-ereader!
 
 ## Project Status
 
@@ -10,7 +10,7 @@ This is a personal project that I maintain for my own use. I'm not actively seek
 
 - Please check existing issues first
 - For bugs, include: Python version, OS, and steps to reproduce
-- For feature requests, consider if it fits the project's narrow scope (arXiv HTML → EPUB)
+- For feature requests, consider if it fits the project's narrow scope (arXiv HTML → e-reader formats)
 
 ## Pull Requests
 

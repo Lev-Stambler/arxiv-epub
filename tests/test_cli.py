@@ -2,8 +2,8 @@
 
 from typer.testing import CliRunner
 
-from arxiv_epub import __version__
-from arxiv_epub.cli import app
+from arxiv_to_ereader import __version__
+from arxiv_to_ereader.cli import app
 
 runner = CliRunner()
 

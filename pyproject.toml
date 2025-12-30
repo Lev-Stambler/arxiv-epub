@@ -1,12 +1,12 @@
 [project]
-name = "arxiv-epub"
+name = "arxiv-to-ereader"
 version = "0.1.0"
-description = "Convert arXiv HTML papers to EPUB for Kindle"
+description = "Convert arXiv HTML papers to EPUB and Kindle formats"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [{ name = "Lev" }]
-keywords = ["arxiv", "epub", "kindle", "ebook", "paper"]
+keywords = ["arxiv", "epub", "kindle", "mobi", "azw3", "ebook", "paper", "ereader"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -35,45 +35,53 @@ dev = [
     "pytest-cov>=6.0",
     "respx>=0.21",
     "ruff>=0.8",
+    "playwright>=1.40",
+    "pytest-playwright>=0.5",
 ]
 web = [
     "streamlit>=1.40",
 ]
 
 [project.scripts]
-arxiv-epub = "arxiv_epub.cli:app"
+arxiv-to-ereader = "arxiv_to_ereader.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/Lev-Stambler/arxiv-epub"
-Repository = "https://github.com/Lev-Stambler/arxiv-epub"
-Issues = "https://github.com/Lev-Stambler/arxiv-epub/issues"
+Homepage = "https://github.com/Lev-Stambler/arxiv-to-ereader"
+Repository = "https://github.com/Lev-Stambler/arxiv-to-ereader"
+Issues = "https://github.com/Lev-Stambler/arxiv-to-ereader/issues"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/arxiv_epub"]
+packages = ["src/arxiv_to_ereader"]
 
 [tool.ruff]
 target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+select = ["E", "F", "I", "W", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=arxiv_epub --cov-report=term-missing --cov-report=html --cov-fail-under=80"
+addopts = "--cov=arxiv_to_ereader --cov-report=term-missing --cov-report=html --cov-fail-under=80"
 
 [tool.coverage.run]
-source = ["src/arxiv_epub"]
-omit = ["src/arxiv_epub/web.py"]
+source = ["src/arxiv_to_ereader"]
+omit = ["src/arxiv_to_ereader/web.py"]
 
 [tool.coverage.report]
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
+]
+
+[dependency-groups]
+dev = [
+    "playwright>=1.57.0",
+    "pytest-playwright>=0.7.2",
 ]

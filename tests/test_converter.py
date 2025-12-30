@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from arxiv_epub.converter import convert_to_epub
-from arxiv_epub.parser import Figure, Paper, Section
+from arxiv_to_ereader.converter import convert_to_epub
+from arxiv_to_ereader.parser import Figure, Paper, Section
 
 
 @pytest.fixture

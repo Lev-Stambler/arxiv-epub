@@ -2,7 +2,7 @@
 
 import pytest
 
-from arxiv_epub.fetcher import (
+from arxiv_to_ereader.fetcher import (
     get_abs_url,
     get_html_url,
     normalize_arxiv_id,

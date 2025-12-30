@@ -1,30 +1,58 @@
-# arxiv-epub
+# arxiv-to-ereader
 
-Convert arXiv HTML papers to EPUB format for easy reading on Kindle and other e-readers.
+Convert arXiv HTML papers to EPUB and Kindle formats (MOBI, AZW3) for easy reading on e-readers.
+
+## Quick Start
+
+```bash
+# Install
+git clone https://github.com/Lev-Stambler/arxiv-to-ereader.git
+cd arxiv-to-ereader
+uv sync
+
+# Convert a paper to EPUB
+uv run arxiv-to-ereader 2402.08954
+
+# Convert to native Kindle format (requires Calibre)
+uv run arxiv-to-ereader 2402.08954 --format azw3
+```
 
 ## Features
 
+- **Multiple Formats**: Output to EPUB, MOBI, or AZW3 (native Kindle format)
 - **Simple CLI**: Convert papers with a single command
 - **Batch Processing**: Convert multiple papers at once
-- **Responsive Design**: Optimized CSS for all Kindle devices (Paperwhite, Oasis, Fire)
 - **Web Interface**: Optional Streamlit UI for non-technical users
+- **Responsive Design**: Optimized CSS for Kindle devices (Paperwhite, Oasis, Fire)
 - **Flexible Input**: Accepts arXiv IDs or URLs
 - **Multiple Styles**: Choose from default, compact, or large-text presets
 
 ## Installation
 
-### Using uv (recommended)
+### From source (recommended)
 
 ```bash
-uv pip install arxiv-epub
+git clone https://github.com/Lev-Stambler/arxiv-to-ereader.git
+cd arxiv-to-ereader
+uv sync
 ```
 
-### From source
+### Using pip
 
 ```bash
-git clone https://github.com/Lev-Stambler/arxiv-epub.git
-cd arxiv-epub
-uv sync
+pip install arxiv-to-ereader
+```
+
+### Kindle Format Support (Optional)
+
+To convert to native Kindle formats (MOBI/AZW3), install [Calibre](https://calibre-ebook.com/download):
+
+```bash
+# macOS
+brew install calibre
+
+# Ubuntu/Debian
+sudo apt install calibre
 ```
 
 ## Usage
@@ -32,24 +60,40 @@ uv sync
 ### Command Line
 
 ```bash
-# Convert a single paper
-uv run arxiv-epub 2402.08954
+# Convert a single paper to EPUB (default)
+uv run arxiv-to-ereader 2402.08954
+
+# Convert to native Kindle format (AZW3 - recommended for Kindle)
+uv run arxiv-to-ereader 2402.08954 --format azw3
+
+# Convert to MOBI format
+uv run arxiv-to-ereader 2402.08954 --format mobi
 
 # Convert from URL
-uv run arxiv-epub https://arxiv.org/abs/2402.08954
+uv run arxiv-to-ereader https://arxiv.org/abs/2402.08954
 
 # Convert multiple papers
-uv run arxiv-epub 2402.08954 2401.12345 2312.00001
+uv run arxiv-to-ereader 2402.08954 2401.12345 2312.00001 -f azw3
 
 # Specify output directory
-uv run arxiv-epub 2402.08954 -o ~/kindle-papers/
+uv run arxiv-to-ereader 2402.08954 -o ~/kindle-papers/ -f azw3
 
 # Use a different style preset
-uv run arxiv-epub 2402.08954 --style large-text
+uv run arxiv-to-ereader 2402.08954 --style large-text
 
 # Skip images for faster/smaller files
-uv run arxiv-epub 2402.08954 --no-images
+uv run arxiv-to-ereader 2402.08954 --no-images
 ```
+
+### Output Formats
+
+| Format | Extension | Description |
+|--------|-----------|-------------|
+| `epub` | `.epub` | Universal e-book format (default) |
+| `azw3` | `.azw3` | Native Kindle format (KF8) - recommended for Kindle |
+| `mobi` | `.mobi` | Legacy Kindle format |
+
+**Note**: AZW3 is the recommended format for Kindle devices as it supports the latest Kindle features and typography.
 
 ### Style Presets
 
@@ -57,26 +101,39 @@ uv run arxiv-epub 2402.08954 --no-images
 - `compact`: Smaller text, more content per page
 - `large-text`: Larger text for easier reading
 
-### Web Interface (Streamlit)
+### Web Interface
 
 Run the web interface locally:
 
 ```bash
 uv sync --extra web
-uv run streamlit run src/arxiv_epub/web.py
+uv run streamlit run src/arxiv_to_ereader/web.py
 ```
+
+The web interface supports:
+- Single or batch paper conversion
+- Format selection (EPUB, MOBI, AZW3)
+- Style presets
+- Image inclusion toggle
 
 ## Python API
 
 ```python
-from arxiv_epub import fetch_paper, parse_paper, convert_to_epub
+from arxiv_to_ereader import fetch_paper, parse_paper, convert_to_epub, OutputFormat
 
-# Fetch and convert a paper
+# Fetch and convert a paper to EPUB
 paper_id, html = fetch_paper("2402.08954")
 paper = parse_paper(html, paper_id)
 epub_path = convert_to_epub(paper, output_path="paper.epub")
 
-print(f"Created: {epub_path}")
+# Convert to native Kindle format (AZW3)
+azw3_path = convert_to_epub(
+    paper,
+    output_path="paper.azw3",
+    output_format=OutputFormat.AZW3
+)
+
+print(f"Created: {azw3_path}")
 print(f"Title: {paper.title}")
 print(f"Authors: {', '.join(paper.authors)}")
 ```
@@ -85,19 +142,21 @@ print(f"Authors: {', '.join(paper.authors)}")
 
 - Python 3.10+
 - arXiv papers with HTML version available (papers submitted after Dec 2023)
+- [Calibre](https://calibre-ebook.com/download) (optional, for MOBI/AZW3 conversion)
 
 ## Limitations
 
 - Only works with arXiv papers that have HTML versions
 - Papers submitted before December 2023 may not have HTML available
 - Complex mathematical equations may not render perfectly on all e-readers
+- MOBI/AZW3 conversion requires Calibre to be installed
 
 ## Development
 
 ```bash
 # Clone the repo
-git clone https://github.com/Lev-Stambler/arxiv-epub.git
-cd arxiv-epub
+git clone https://github.com/Lev-Stambler/arxiv-to-ereader.git
+cd arxiv-to-ereader
 
 # Install with dev dependencies
 uv sync --all-extras
@@ -114,14 +173,15 @@ uv run ruff check src tests
 1. **Fetch**: Downloads the HTML version of the paper from arXiv
 2. **Parse**: Extracts title, authors, abstract, sections, figures, and references
 3. **Convert**: Creates an EPUB file using ebooklib with responsive CSS styling
+4. **Transform** (optional): Converts EPUB to Kindle formats using Calibre
 
-The generated EPUB includes:
+The generated ebook includes:
 - Cover page with title, authors, and paper ID
 - Abstract
 - All paper sections
 - Embedded figures (optional)
 - References
-- Responsive CSS optimized for Kindle devices
+- Responsive CSS optimized for e-reader devices
 
 ## License
 
@@ -131,6 +191,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - [arXiv](https://arxiv.org) for providing HTML versions of papers
 - [ebooklib](https://github.com/aerkalov/ebooklib) for EPUB generation
+- [Calibre](https://calibre-ebook.com) for Kindle format conversion
 - [LaTeXML](https://dlmf.nist.gov/LaTeXML/) which powers arXiv's HTML conversion
 
 ## Disclaimer

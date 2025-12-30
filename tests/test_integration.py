@@ -8,8 +8,8 @@ import pytest
 import respx
 from httpx import Response
 
-from arxiv_epub import convert_to_epub, fetch_paper, parse_paper
-from arxiv_epub.fetcher import ArxivFetchError, ArxivHTMLNotAvailable
+from arxiv_to_ereader import convert_to_epub, fetch_paper, parse_paper
+from arxiv_to_ereader.fetcher import ArxivFetchError, ArxivHTMLNotAvailable
 
 # Realistic arXiv HTML sample
 REALISTIC_ARXIV_HTML = """
@@ -231,7 +231,7 @@ class TestUnicodeHandling:
 
     def test_unicode_epub_generation(self) -> None:
         """Test that Unicode content survives EPUB generation."""
-        from arxiv_epub.parser import Paper, Section
+        from arxiv_to_ereader.parser import Paper, Section
 
         paper = Paper(
             id="0000.00000",
@@ -330,7 +330,7 @@ class TestEpubValidation:
 
     def test_epub_mimetype_first(self) -> None:
         """Test that mimetype is the first file in the ZIP (EPUB requirement)."""
-        from arxiv_epub.parser import Paper
+        from arxiv_to_ereader.parser import Paper
 
         paper = Paper(
             id="test.00001",
@@ -350,7 +350,7 @@ class TestEpubValidation:
 
     def test_epub_container_xml_exists(self) -> None:
         """Test that META-INF/container.xml exists."""
-        from arxiv_epub.parser import Paper
+        from arxiv_to_ereader.parser import Paper
 
         paper = Paper(
             id="test.00001",
@@ -369,7 +369,7 @@ class TestEpubValidation:
 
     def test_epub_has_opf_file(self) -> None:
         """Test that the EPUB has a .opf package file."""
-        from arxiv_epub.parser import Paper
+        from arxiv_to_ereader.parser import Paper
 
         paper = Paper(
             id="test.00001",
@@ -389,7 +389,7 @@ class TestEpubValidation:
 
     def test_epub_has_ncx_toc(self) -> None:
         """Test that the EPUB has NCX table of contents."""
-        from arxiv_epub.parser import Paper
+        from arxiv_to_ereader.parser import Paper
 
         paper = Paper(
             id="test.00001",

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from arxiv_epub.converter import convert_to_epub
-from arxiv_epub.parser import Paper, Section
-from arxiv_epub.styles import (
+from arxiv_to_ereader.converter import convert_to_epub
+from arxiv_to_ereader.parser import Paper, Section
+from arxiv_to_ereader.styles import (
     BASE_CSS,
     KINDLE_MEDIA_QUERIES,
     STYLE_PRESETS,

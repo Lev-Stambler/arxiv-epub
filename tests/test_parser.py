@@ -1,6 +1,6 @@
 """Tests for the parser module."""
 
-from arxiv_epub.parser import parse_paper
+from arxiv_to_ereader.parser import parse_paper
 
 
 class TestParsePaper:

@@ -1,4 +1,4 @@
-"""Pytest fixtures for arxiv-epub tests."""
+"""Pytest fixtures for arxiv-to-ereader tests."""
 
 import pytest
 

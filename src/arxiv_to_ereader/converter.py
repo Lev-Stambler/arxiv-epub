@@ -1,12 +1,68 @@
-"""Convert parsed papers to EPUB format."""
+"""Convert parsed papers to EPUB and Kindle formats."""
 
+import shutil
+import subprocess
+import tempfile
+from enum import Enum
 from pathlib import Path
 
 import httpx
 from ebooklib import epub
 
-from arxiv_epub.parser import Paper
-from arxiv_epub.styles import get_cover_css, get_stylesheet
+from arxiv_to_ereader.parser import Paper
+from arxiv_to_ereader.styles import get_cover_css, get_stylesheet
+
+
+class OutputFormat(str, Enum):
+    """Supported output formats."""
+
+    EPUB = "epub"
+    MOBI = "mobi"
+    AZW3 = "azw3"
+
+
+def _check_calibre_available() -> bool:
+    """Check if Calibre's ebook-convert is available."""
+    return shutil.which("ebook-convert") is not None
+
+
+def _convert_epub_to_kindle(
+    epub_path: Path,
+    output_path: Path,
+    output_format: OutputFormat,
+) -> Path:
+    """Convert EPUB to Kindle format using Calibre's ebook-convert.
+
+    Args:
+        epub_path: Path to the source EPUB file
+        output_path: Path for the output file
+        output_format: Target format (mobi or azw3)
+
+    Returns:
+        Path to the converted file
+
+    Raises:
+        RuntimeError: If Calibre is not installed or conversion fails
+    """
+    if not _check_calibre_available():
+        raise RuntimeError(
+            "Calibre's ebook-convert not found. Install Calibre to convert to Kindle formats.\n"
+            "  - macOS: brew install calibre\n"
+            "  - Ubuntu/Debian: sudo apt install calibre\n"
+            "  - Or download from: https://calibre-ebook.com/download"
+        )
+
+    try:
+        result = subprocess.run(
+            ["ebook-convert", str(epub_path), str(output_path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Calibre conversion failed: {e.stderr}") from e
+
+    return output_path
 
 
 def _create_cover_chapter(paper: Paper) -> epub.EpubHtml:
@@ -136,18 +192,23 @@ def convert_to_epub(
     output_path: Path | str | None = None,
     style_preset: str = "default",
     download_images: bool = True,
+    output_format: OutputFormat | str = OutputFormat.EPUB,
 ) -> Path:
-    """Convert a parsed paper to EPUB format.
+    """Convert a parsed paper to EPUB or Kindle format.
 
     Args:
         paper: Parsed Paper object
-        output_path: Output file path (defaults to {paper_id}.epub in current directory)
+        output_path: Output file path (defaults to {paper_id}.{format} in current directory)
         style_preset: Style preset name ("default", "compact", "large-text")
         download_images: Whether to download and embed images
+        output_format: Output format ("epub", "mobi", or "azw3")
 
     Returns:
-        Path to the created EPUB file
+        Path to the created ebook file
     """
+    # Normalize format
+    if isinstance(output_format, str):
+        output_format = OutputFormat(output_format.lower())
     # Create EPUB book
     book = epub.EpubBook()
 
@@ -188,35 +249,45 @@ def convert_to_epub(
         book.add_item(abstract_chapter)
         chapters.append(abstract_chapter)
 
-    # Download and add images
-    image_items = {}
-    if download_images and paper.figures:
-        for fig in paper.figures:
-            if fig.image_url:
-                result = _download_image(fig.image_url)
-                if result:
-                    img_data, media_type = result
-                    # Create a safe filename
-                    ext = media_type.split("/")[-1]
-                    if ext == "jpeg":
-                        ext = "jpg"
-                    img_filename = f"images/{fig.id}.{ext}"
+    # Download and add ALL images from the paper
+    # Maps original src (relative or absolute) -> epub path
+    image_url_to_epub_path: dict[str, str] = {}
 
-                    img_item = epub.EpubItem(
-                        uid=fig.id,
-                        file_name=img_filename,
-                        media_type=media_type,
-                        content=img_data,
-                    )
-                    book.add_item(img_item)
-                    image_items[fig.image_url] = img_filename
+    if download_images and paper.all_images:
+        for i, (original_src, absolute_url) in enumerate(paper.all_images.items()):
+            result = _download_image(absolute_url)
+            if result:
+                img_data, media_type = result
+                # Create a safe filename
+                ext = media_type.split("/")[-1]
+                if ext == "jpeg":
+                    ext = "jpg"
+                elif ext == "svg+xml":
+                    ext = "svg"
+
+                # Use index to ensure unique filenames
+                img_filename = f"images/img_{i:04d}.{ext}"
+
+                img_item = epub.EpubItem(
+                    uid=f"image_{i}",
+                    file_name=img_filename,
+                    media_type=media_type,
+                    content=img_data,
+                )
+                book.add_item(img_item)
+
+                # Map both original src and absolute URL to the epub path
+                image_url_to_epub_path[original_src] = img_filename
+                image_url_to_epub_path[absolute_url] = img_filename
 
     # Sections
     for i, section in enumerate(paper.sections):
         # Update image URLs in section content
         content = section.content
-        for old_url, new_path in image_items.items():
-            content = content.replace(old_url, new_path)
+        for old_url, new_path in image_url_to_epub_path.items():
+            # Replace in both quote styles
+            content = content.replace(f'src="{old_url}"', f'src="{new_path}"')
+            content = content.replace(f"src='{old_url}'", f"src='{new_path}'")
 
         section_chapter = _create_section_chapter(
             i,
@@ -244,15 +315,32 @@ def convert_to_epub(
     book.spine = ["nav"] + chapters
 
     # Determine output path
+    file_ext = output_format.value
     if output_path is None:
-        output_path = Path(f"{paper.id.replace('/', '_')}.epub")
+        output_path = Path(f"{paper.id.replace('/', '_')}.{file_ext}")
     else:
         output_path = Path(output_path)
+        # Update extension if format specified but path has wrong extension
+        if output_path.suffix.lower() != f".{file_ext}":
+            output_path = output_path.with_suffix(f".{file_ext}")
 
     # Create parent directories if needed
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write EPUB
-    epub.write_epub(str(output_path), book, {})
+    # For Kindle formats, we need to first create an EPUB then convert
+    if output_format in (OutputFormat.MOBI, OutputFormat.AZW3):
+        # Create temporary EPUB
+        with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
+            tmp_epub_path = Path(tmp.name)
+
+        try:
+            epub.write_epub(str(tmp_epub_path), book, {})
+            _convert_epub_to_kindle(tmp_epub_path, output_path, output_format)
+        finally:
+            # Clean up temp file
+            tmp_epub_path.unlink(missing_ok=True)
+    else:
+        # Write EPUB directly
+        epub.write_epub(str(output_path), book, {})
 
     return output_path

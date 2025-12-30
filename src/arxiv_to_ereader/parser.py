@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 from urllib.parse import urljoin
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
 
 
 @dataclass
@@ -29,6 +29,15 @@ class Section:
 
 
 @dataclass
+class Footnote:
+    """A footnote from the paper."""
+
+    id: str
+    index: int
+    content: str  # HTML content
+
+
+@dataclass
 class Paper:
     """Parsed arXiv paper."""
 
@@ -39,6 +48,7 @@ class Paper:
     date: str | None = None
     sections: list[Section] = field(default_factory=list)
     figures: list[Figure] = field(default_factory=list)
+    footnotes: list[Footnote] = field(default_factory=list)
     references_html: str | None = None
     base_url: str | None = None
     # Map of original image src -> absolute URL for ALL images in the paper
@@ -48,6 +58,122 @@ class Paper:
 def _clean_text(text: str) -> str:
     """Clean up text by normalizing whitespace."""
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _process_content(soup_fragment: Tag, footnote_counter: list[int]) -> tuple[str, list[Footnote]]:
+    """Process HTML content for better EPUB compatibility.
+
+    Handles:
+    - Wrapping tables for responsive scrolling
+    - Extracting and linking footnotes
+    - Adding classes to code blocks
+    - Cleaning up math structures
+    - Styling theorems/proofs/definitions
+
+    Args:
+        soup_fragment: The BeautifulSoup Tag containing the content
+        footnote_counter: Mutable list with single int for global footnote counting
+
+    Returns:
+        Tuple of (processed_html_string, list_of_footnotes)
+    """
+    footnotes: list[Footnote] = []
+
+    # Helper to create new tags
+    def new_tag(name: str, attrs: dict | None = None) -> Tag:
+        tag = BeautifulSoup(f"<{name}></{name}>", "lxml").find(name)
+        if attrs:
+            for k, v in attrs.items():
+                tag[k] = v
+        return tag
+
+    # 1. Handle Tables: Wrap in div for horizontal scrolling on e-readers
+    for table in soup_fragment.select(".ltx_tabular, .ltx_table, table"):
+        if table.parent and "table-wrapper" not in table.parent.get("class", []):
+            wrapper = new_tag("div", {"class": "table-wrapper"})
+            table.wrap(wrapper)
+
+    # 2. Handle Footnotes: Extract inline notes and replace with links
+    # LaTeXML uses class="ltx_note" for footnotes
+    for note in soup_fragment.select(".ltx_note"):
+        footnote_counter[0] += 1
+        idx = footnote_counter[0]
+        note_id = f"fn-{idx}"
+        back_id = f"fnref-{idx}"
+
+        # Get the note content (skip the note mark if present)
+        note_content_elem = note.select_one(".ltx_note_content")
+        if note_content_elem:
+            note_content = "".join(str(c) for c in note_content_elem.children)
+        else:
+            note_content = "".join(str(c) for c in note.children)
+
+        footnotes.append(Footnote(id=note_id, index=idx, content=note_content.strip()))
+
+        # Replace note with a superscript link
+        link = new_tag("a", {
+            "href": f"#{note_id}",
+            "id": back_id,
+            "class": "footnote-ref",
+            "epub:type": "noteref",
+            "role": "doc-noteref",
+        })
+        sup = new_tag("sup")
+        sup.string = str(idx)
+        link.append(sup)
+        note.replace_with(link)
+
+    # 3. Handle Code Blocks: Ensure proper styling
+    for listing in soup_fragment.select(".ltx_listing, .ltx_verbatim"):
+        existing_classes = listing.get("class", [])
+        if "code-block" not in existing_classes:
+            listing["class"] = existing_classes + ["code-block"]
+
+    # 4. Handle Theorems, Proofs, Definitions, Lemmas
+    # LaTeXML uses ltx_theorem, ltx_proof, etc.
+    theorem_classes = [
+        "ltx_theorem",
+        "ltx_proof",
+        "ltx_lemma",
+        "ltx_definition",
+        "ltx_corollary",
+        "ltx_proposition",
+        "ltx_remark",
+        "ltx_example",
+    ]
+    for cls in theorem_classes:
+        for elem in soup_fragment.select(f".{cls}"):
+            # Add epub-friendly class
+            existing = elem.get("class", [])
+            if "theorem-like" not in existing:
+                elem["class"] = existing + ["theorem-like"]
+
+    # 5. Handle equations - ensure they have proper wrappers
+    for eq in soup_fragment.select(".ltx_equation, .ltx_equationgroup"):
+        existing = eq.get("class", [])
+        if "math-block" not in existing:
+            eq["class"] = existing + ["math-block"]
+
+    # 6. Handle inline math - add class for styling
+    for math in soup_fragment.select(".ltx_Math"):
+        existing = math.get("class", [])
+        if "math-inline" not in existing:
+            math["class"] = existing + ["math-inline"]
+
+    # 7. Handle cross-references - ensure they work in EPUB
+    for ref in soup_fragment.select(".ltx_ref"):
+        href = ref.get("href", "")
+        # Convert absolute arXiv URLs to relative anchors
+        if "arxiv.org/html/" in href and "#" in href:
+            ref["href"] = "#" + href.split("#")[-1]
+
+    # 8. Handle citation references
+    for cite in soup_fragment.select(".ltx_cite"):
+        existing = cite.get("class", [])
+        if "citation" not in existing:
+            cite["class"] = existing + ["citation"]
+
+    return str(soup_fragment), footnotes
 
 
 def _extract_title(soup: BeautifulSoup) -> str:
@@ -80,7 +206,9 @@ def _extract_authors(soup: BeautifulSoup) -> list[str]:
         for elem in author_elems:
             name = _clean_text(elem.get_text())
             if name and name not in authors:
-                authors.append(name)
+                # Filter out email addresses and affiliations
+                if "@" not in name and len(name) < 100:
+                    authors.append(name)
         return authors
 
     # Try meta tags
@@ -127,18 +255,21 @@ def _extract_date(soup: BeautifulSoup) -> str | None:
     return None
 
 
-def _extract_sections(soup: BeautifulSoup) -> list[Section]:
-    """Extract paper sections with their content."""
+def _extract_sections(soup: BeautifulSoup) -> tuple[list[Section], list[Footnote]]:
+    """Extract paper sections with their content and footnotes."""
     sections = []
+    all_footnotes: list[Footnote] = []
+    footnote_counter = [0]  # Mutable counter for footnotes
 
     # Find all LaTeXML sections
     section_elems = soup.select(".ltx_section, .ltx_subsection, .ltx_subsubsection")
 
     for i, elem in enumerate(section_elems):
         # Determine section level
-        if "ltx_section" in elem.get("class", []):
+        classes = elem.get("class", [])
+        if "ltx_section" in classes:
             level = 1
-        elif "ltx_subsection" in elem.get("class", []):
+        elif "ltx_subsection" in classes:
             level = 2
         else:
             level = 3
@@ -150,43 +281,59 @@ def _extract_sections(soup: BeautifulSoup) -> list[Section]:
         title_elem = elem.select_one(".ltx_title")
         title = _clean_text(title_elem.get_text()) if title_elem else f"Section {i + 1}"
 
-        # Get content (everything except title)
-        content_parts = []
-        for child in elem.children:
-            if isinstance(child, Tag):
-                if "ltx_title" not in child.get("class", []):
-                    # Skip nested sections - they'll be processed separately
-                    if not any(
-                        cls in child.get("class", [])
-                        for cls in ["ltx_section", "ltx_subsection", "ltx_subsubsection"]
-                    ):
-                        content_parts.append(str(child))
+        # Create a container for content to process
+        content_container = soup.new_tag("div")
 
-        content = "\n".join(content_parts)
+        for child in list(elem.children):
+            if isinstance(child, Tag):
+                child_classes = child.get("class", [])
+                # Skip the title element
+                if "ltx_title" in child_classes:
+                    continue
+                # Skip nested sections - they'll be processed separately
+                if any(
+                    cls in child_classes
+                    for cls in ["ltx_section", "ltx_subsection", "ltx_subsubsection"]
+                ):
+                    continue
+                # Clone the child to avoid modifying original
+                content_container.append(child)
+
+        # Process content (extract footnotes, wrap tables, etc.)
+        processed_html, section_footnotes = _process_content(content_container, footnote_counter)
+        all_footnotes.extend(section_footnotes)
 
         sections.append(
             Section(
                 id=section_id,
                 title=title,
                 level=level,
-                content=content,
+                content=processed_html,
             )
         )
 
     # If no LaTeXML sections found, try to get main content
     if not sections:
-        main_content = soup.select_one(".ltx_page_main, article, main, .content")
+        main_content = soup.select_one(".ltx_page_main, .ltx_page_content, article, main, .content")
         if main_content:
+            container = soup.new_tag("div")
+            for child in list(main_content.children):
+                if isinstance(child, Tag):
+                    container.append(child)
+
+            processed_html, section_footnotes = _process_content(container, footnote_counter)
+            all_footnotes.extend(section_footnotes)
+
             sections.append(
                 Section(
                     id="main-content",
                     title="Content",
                     level=1,
-                    content=str(main_content),
+                    content=processed_html,
                 )
             )
 
-    return sections
+    return sections, all_footnotes
 
 
 def _extract_figures(soup: BeautifulSoup, base_url: str | None = None) -> list[Figure]:
@@ -259,6 +406,12 @@ def _extract_references(soup: BeautifulSoup) -> str | None:
     """Extract references section HTML."""
     refs = soup.select_one(".ltx_bibliography, #references, .references")
     if refs:
+        # Clean up the references for EPUB
+        # Convert absolute URLs to relative anchors
+        for ref in refs.select(".ltx_ref"):
+            href = ref.get("href", "")
+            if "arxiv.org/html/" in href and "#" in href:
+                ref["href"] = "#" + href.split("#")[-1]
         return str(refs)
     return None
 
@@ -280,15 +433,23 @@ def parse_paper(html: str, paper_id: str, base_url: str | None = None) -> Paper:
     if not base_url:
         base_url = f"https://arxiv.org/html/{paper_id}/"
 
+    # Extract figures and images BEFORE sections (since section extraction modifies soup)
+    figures = _extract_figures(soup, base_url)
+    all_images = _extract_all_images(soup, base_url)
+
+    # Now extract sections (this may modify the soup)
+    sections, footnotes = _extract_sections(soup)
+
     return Paper(
         id=paper_id,
         title=_extract_title(soup),
         authors=_extract_authors(soup),
         abstract=_extract_abstract(soup),
         date=_extract_date(soup),
-        sections=_extract_sections(soup),
-        figures=_extract_figures(soup, base_url),
+        sections=sections,
+        figures=figures,
+        footnotes=footnotes,
         references_html=_extract_references(soup),
         base_url=base_url,
-        all_images=_extract_all_images(soup, base_url),
+        all_images=all_images,
     )

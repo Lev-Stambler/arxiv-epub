@@ -167,6 +167,42 @@ def _create_references_chapter(
     return chapter
 
 
+def _create_footnotes_chapter(
+    footnotes: list,
+    stylesheet: epub.EpubItem,
+) -> epub.EpubHtml:
+    """Create a footnotes chapter."""
+    from arxiv_to_ereader.parser import Footnote
+
+    footnotes_html = ""
+    for fn in footnotes:
+        if isinstance(fn, Footnote):
+            back_link = f'<a href="#fnref-{fn.index}" class="footnote-back">↩</a>'
+            footnotes_html += f'<li id="{fn.id}">{fn.content} {back_link}</li>\n'
+
+    content = f"""<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+    <title>Notes</title>
+    <link rel="stylesheet" href="style.css" type="text/css"/>
+</head>
+<body>
+    <section class="footnotes-section" epub:type="footnotes">
+        <h1>Notes</h1>
+        <ol>
+            {footnotes_html}
+        </ol>
+    </section>
+</body>
+</html>"""
+
+    chapter = epub.EpubHtml(title="Notes", file_name="footnotes.xhtml", lang="en")
+    chapter.content = content.encode("utf-8")
+    chapter.add_item(stylesheet)
+    return chapter
+
+
 def _download_image(url: str, timeout: float = 30.0) -> tuple[bytes, str] | None:
     """Download an image and return its content and media type.
 
@@ -303,6 +339,12 @@ def convert_to_epub(
         refs_chapter = _create_references_chapter(paper.references_html, stylesheet)
         book.add_item(refs_chapter)
         chapters.append(refs_chapter)
+
+    # Footnotes (if any were extracted)
+    if paper.footnotes:
+        footnotes_chapter = _create_footnotes_chapter(paper.footnotes, stylesheet)
+        book.add_item(footnotes_chapter)
+        chapters.append(footnotes_chapter)
 
     # Create table of contents
     book.toc = [(chapter, []) for chapter in chapters]

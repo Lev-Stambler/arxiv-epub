@@ -189,16 +189,125 @@ math, .ltx_Math, .MathJax {
     margin-bottom: 0.5em;
 }
 
-.ltx_theorem {
+/* Theorem-like environments */
+.theorem-like, .ltx_theorem, .ltx_lemma, .ltx_definition,
+.ltx_corollary, .ltx_proposition, .ltx_remark, .ltx_example {
     margin: 1.5em 0;
     padding: 1em;
     background: #f9f9f9;
     border: 1px solid #ddd;
+    border-left: 4px solid #666;
+    page-break-inside: avoid;
 }
 
-.ltx_theorem_proof {
-    margin: 1em 0;
+.ltx_theorem .ltx_title,
+.theorem-like .ltx_title {
+    font-weight: bold;
     font-style: italic;
+    margin-bottom: 0.5em;
+}
+
+.ltx_proof {
+    margin: 1em 0;
+    padding: 0.5em 1em;
+    border-left: 3px solid #999;
+    font-style: normal;
+}
+
+.ltx_proof .ltx_title {
+    font-style: italic;
+    font-weight: bold;
+}
+
+/* Table wrapper for horizontal scrolling */
+.table-wrapper {
+    overflow-x: auto;
+    margin: 1em 0;
+    -webkit-overflow-scrolling: touch;
+}
+
+.ltx_tabular, .ltx_table {
+    margin: 0 auto;
+}
+
+/* Footnotes */
+.footnote-ref {
+    text-decoration: none;
+    color: #0066cc;
+}
+
+.footnote-ref sup {
+    font-size: 0.75em;
+    vertical-align: super;
+}
+
+.footnotes-section {
+    margin-top: 2em;
+    padding-top: 1em;
+    border-top: 1px solid #ccc;
+    font-size: 0.9em;
+}
+
+.footnotes-section h2 {
+    font-size: 1.1em;
+    margin-bottom: 1em;
+}
+
+.footnotes-section ol {
+    padding-left: 1.5em;
+}
+
+.footnotes-section li {
+    margin-bottom: 0.75em;
+}
+
+.footnote-back {
+    margin-left: 0.5em;
+    text-decoration: none;
+}
+
+/* Code blocks */
+.code-block, .ltx_listing, .ltx_verbatim {
+    background: #f5f5f5;
+    padding: 1em;
+    margin: 1em 0;
+    overflow-x: auto;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 0.85em;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+
+/* Math blocks */
+.math-block, .ltx_equation, .ltx_equationgroup {
+    display: block;
+    margin: 1em 0;
+    text-align: center;
+    overflow-x: auto;
+    padding: 0.5em;
+}
+
+.math-inline, .ltx_Math {
+    display: inline;
+    font-size: 1em;
+}
+
+/* Equation numbers */
+.ltx_tag_equation {
+    float: right;
+    font-size: 0.9em;
+    color: #666;
+}
+
+/* Citations */
+.citation, .ltx_cite {
+    font-style: normal;
+}
+
+.ltx_cite a {
+    color: #0066cc;
 }
 
 /* References */

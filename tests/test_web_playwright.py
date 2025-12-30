@@ -5,8 +5,6 @@ import time
 from typing import Generator
 
 import pytest
-import respx
-from httpx import Response
 from playwright.sync_api import Page, expect
 
 # Sample HTML for mocking

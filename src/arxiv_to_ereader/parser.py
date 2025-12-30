@@ -204,11 +204,34 @@ def _extract_authors(soup: BeautifulSoup) -> list[str]:
     author_elems = soup.select(".ltx_personname")
     if author_elems:
         for elem in author_elems:
-            name = _clean_text(elem.get_text())
-            if name and name not in authors:
-                # Filter out email addresses and affiliations
-                if "@" not in name and len(name) < 100:
-                    authors.append(name)
+            # Get direct text content, excluding nested elements with emails
+            # First try to get text before any <br> or email-containing spans
+            name_parts = []
+            for child in elem.children:
+                if isinstance(child, NavigableString):
+                    text = str(child).strip()
+                    if text and "@" not in text:
+                        name_parts.append(text)
+                elif isinstance(child, Tag):
+                    # Skip elements that contain emails
+                    child_text = child.get_text()
+                    if "@" not in child_text and child.name not in ["br"]:
+                        name_parts.append(_clean_text(child_text))
+
+            name = " ".join(name_parts).strip()
+
+            # Fallback to full text if no parts found
+            if not name:
+                full_text = _clean_text(elem.get_text())
+                # Try to extract name before email
+                if "@" in full_text:
+                    # Split on common email patterns
+                    name = full_text.split("@")[0].rsplit(" ", 1)[0].strip()
+                else:
+                    name = full_text
+
+            if name and name not in authors and len(name) < 100:
+                authors.append(name)
         return authors
 
     # Try meta tags

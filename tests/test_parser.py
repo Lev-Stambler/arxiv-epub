@@ -99,6 +99,25 @@ class TestParserEdgeCases:
         paper = parse_paper(html, "0000.00000")
         assert paper.authors == []
 
+    def test_authors_with_email(self) -> None:
+        """Test extracting authors when email is embedded in personname."""
+        html = """
+        <html>
+        <head><title>Test</title></head>
+        <body>
+            <div class="ltx_authors">
+                <span class="ltx_personname">Test Team
+                    <br/><span class="ltx_text">team@example.com</span>
+                </span>
+            </div>
+        </body>
+        </html>
+        """
+        paper = parse_paper(html, "0000.00000")
+        assert len(paper.authors) == 1
+        assert paper.authors[0] == "Test Team"
+        assert "@" not in paper.authors[0]
+
     def test_empty_abstract(self) -> None:
         """Test handling HTML with no abstract."""
         html = """

@@ -115,7 +115,6 @@ pre, code {
 
 pre {
     padding: 1em;
-    overflow-x: auto;
     white-space: pre-wrap;
     word-wrap: break-word;
 }
@@ -173,7 +172,6 @@ math, .ltx_Math, .MathJax {
     display: block;
     margin: 1em 0;
     text-align: center;
-    overflow-x: auto;
 }
 
 /* LaTeXML specific styles */
@@ -219,11 +217,9 @@ math, .ltx_Math, .MathJax {
     font-weight: bold;
 }
 
-/* Table wrapper for horizontal scrolling */
+/* Table wrapper - static layout for e-readers */
 .table-wrapper {
-    overflow-x: auto;
     margin: 1em 0;
-    -webkit-overflow-scrolling: touch;
 }
 
 .ltx_tabular, .ltx_table {
@@ -271,7 +267,6 @@ math, .ltx_Math, .MathJax {
     background: #f5f5f5;
     padding: 1em;
     margin: 1em 0;
-    overflow-x: auto;
     font-family: "Courier New", Courier, monospace;
     font-size: 0.85em;
     white-space: pre-wrap;
@@ -285,7 +280,6 @@ math, .ltx_Math, .MathJax {
     display: block;
     margin: 1em 0;
     text-align: center;
-    overflow-x: auto;
     padding: 0.5em;
 }
 

@@ -202,41 +202,62 @@ class TestEpubContent:
 
 
 class TestEpubKindleCompatibility:
-    """Tests for Kindle-compatible EPUB scrubbing via Calibre."""
+    """Tests for Kindle-compatible EPUB scrubbing (no Calibre required)."""
 
-    def test_calibre_scrub_produces_valid_epub(self, sample_paper: Paper) -> None:
-        """Test that Calibre scrubbing produces a valid EPUB (if Calibre available)."""
-        import shutil
-
-        if not shutil.which("ebook-convert"):
-            pytest.skip("Calibre not installed")
-
+    def test_xhtml_has_utf8_encoding_declaration(self, sample_paper: Paper) -> None:
+        """Test that all XHTML files have UTF-8 encoding declaration."""
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test.epub"
             result = convert_to_epub(sample_paper, output_path, download_images=False)
 
-            # Verify the result is still a valid EPUB
+            with zipfile.ZipFile(result, "r") as zf:
+                for name in zf.namelist():
+                    if name.endswith(".xhtml"):
+                        content = zf.read(name).decode("utf-8")
+                        assert '<?xml version="1.0" encoding="utf-8"?>' in content, (
+                            f"{name} missing UTF-8 encoding declaration"
+                        )
+
+    def test_opf_has_language_metadata(self, sample_paper: Paper) -> None:
+        """Test that OPF file has dc:language metadata for Kindle."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "test.epub"
+            result = convert_to_epub(sample_paper, output_path, download_images=False)
+
+            with zipfile.ZipFile(result, "r") as zf:
+                for name in zf.namelist():
+                    if name.endswith(".opf"):
+                        content = zf.read(name).decode("utf-8")
+                        assert "<dc:language>" in content, (
+                            "OPF missing dc:language metadata"
+                        )
+
+    def test_mimetype_first_and_uncompressed(self, sample_paper: Paper) -> None:
+        """Test that mimetype is first entry and stored uncompressed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "test.epub"
+            result = convert_to_epub(sample_paper, output_path, download_images=False)
+
+            with zipfile.ZipFile(result, "r") as zf:
+                # mimetype must be first
+                assert zf.namelist()[0] == "mimetype", "mimetype must be first file"
+                # mimetype must be uncompressed
+                info = zf.getinfo("mimetype")
+                assert info.compress_type == zipfile.ZIP_STORED, (
+                    "mimetype must be stored uncompressed"
+                )
+
+    def test_epub_is_valid_structure(self, sample_paper: Paper) -> None:
+        """Test that scrubbed EPUB has valid structure."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "test.epub"
+            result = convert_to_epub(sample_paper, output_path, download_images=False)
+
             assert result.exists()
             assert zipfile.is_zipfile(result)
 
             with zipfile.ZipFile(result, "r") as zf:
                 names = zf.namelist()
-                # Must contain required EPUB structure
                 assert "mimetype" in names
                 assert any(".opf" in n for n in names)
-                assert any(".xhtml" in n or ".html" in n for n in names)
-
-    def test_epub_valid_without_calibre(self, sample_paper: Paper) -> None:
-        """Test that EPUB is still valid even if Calibre scrubbing is skipped."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "test.epub"
-            result = convert_to_epub(sample_paper, output_path, download_images=False)
-
-            # Basic EPUB validity
-            assert result.exists()
-            assert zipfile.is_zipfile(result)
-
-            with zipfile.ZipFile(result, "r") as zf:
-                names = zf.namelist()
-                assert "mimetype" in names
-                assert any(".opf" in n for n in names)
+                assert any(".xhtml" in n for n in names)

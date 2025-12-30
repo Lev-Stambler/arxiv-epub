@@ -1,8 +1,10 @@
 """Convert parsed papers to EPUB and Kindle formats."""
 
+import re
 import shutil
 import subprocess
 import tempfile
+import zipfile
 from enum import Enum
 from pathlib import Path
 
@@ -28,40 +30,145 @@ def _check_calibre_available() -> bool:
     return shutil.which("ebook-convert") is not None
 
 
-def _scrub_epub_with_calibre(epub_path: Path) -> None:
-    """Scrub EPUB using Calibre's EPUB-to-EPUB conversion for Kindle compatibility.
+def _scrub_epub_for_kindle(epub_path: Path) -> None:
+    """Scrub EPUB for Kindle compatibility without requiring Calibre.
 
-    Amazon's Send to Kindle is stricter than standard readers. Calibre's
-    ebook-convert rebuilds the internal XML structure, fixing encoding issues
-    and malformed markup that cause Kindle rejections.
+    Amazon's Send to Kindle is stricter than standard readers. This function
+    applies fixes based on kindle-epub-fix (https://github.com/innocenat/kindle-epub-fix):
+
+    1. Add UTF-8 encoding declarations (Amazon assumes ISO-8859-1 otherwise)
+    2. Fix NCX links pointing to body IDs (Amazon rejects these)
+    3. Ensure dc:language metadata exists
+    4. Remove <img> tags without src attributes
 
     Args:
         epub_path: Path to the EPUB file to scrub (modified in place)
     """
-    if not _check_calibre_available():
-        # Silently skip if Calibre not available - EPUB will still work
-        # on most readers, just might fail on Send to Kindle
-        return
+    # Read all files from the EPUB
+    files_content: dict[str, bytes] = {}
+    with zipfile.ZipFile(epub_path, "r") as zf:
+        for name in zf.namelist():
+            files_content[name] = zf.read(name)
 
-    # Create a temporary file for the converted output
-    with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
-        tmp_path = Path(tmp.name)
+    # Track body IDs for NCX fix
+    body_ids: dict[str, str] = {}  # filename -> body_id
 
-    try:
-        # Convert EPUB to EPUB - this rebuilds the internal structure
-        result = subprocess.run(
-            ["ebook-convert", str(epub_path), str(tmp_path)],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        # Replace original with scrubbed version
-        shutil.move(str(tmp_path), str(epub_path))
-    except subprocess.CalledProcessError:
-        # If conversion fails, keep the original
-        tmp_path.unlink(missing_ok=True)
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
+    # Process each file
+    for name, content in list(files_content.items()):
+        if name == "mimetype":
+            continue
+
+        # Process XML/HTML files
+        if name.endswith((".xhtml", ".html", ".xml", ".opf", ".ncx")):
+            try:
+                text = content.decode("utf-8")
+                modified = False
+
+                # Fix 1: Ensure UTF-8 encoding declaration
+                if text.lstrip().startswith("<?xml"):
+                    # Replace existing declaration to ensure UTF-8 is explicit
+                    new_text = re.sub(
+                        r"<\?xml[^?]*\?>",
+                        '<?xml version="1.0" encoding="utf-8"?>',
+                        text,
+                        count=1,
+                    )
+                    if new_text != text:
+                        text = new_text
+                        modified = True
+                elif not text.lstrip().startswith("<!DOCTYPE"):
+                    # Add declaration if missing
+                    text = '<?xml version="1.0" encoding="utf-8"?>\n' + text
+                    modified = True
+
+                # Remove invalid XML control characters
+                cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+                if cleaned != text:
+                    text = cleaned
+                    modified = True
+
+                # Fix 4: Remove <img> tags without src (for XHTML files)
+                if name.endswith((".xhtml", ".html")):
+                    soup = BeautifulSoup(text, "lxml-xml")
+
+                    # Find body ID for NCX fix
+                    body = soup.find("body")
+                    if body and body.get("id"):
+                        # Extract just the filename without path
+                        filename = name.split("/")[-1]
+                        body_ids[filename] = body["id"]
+
+                    # Remove img tags without src
+                    img_removed = False
+                    for img in soup.find_all("img"):
+                        if not img.get("src"):
+                            img.decompose()
+                            img_removed = True
+
+                    if img_removed:
+                        # Only re-serialize if we actually removed something
+                        text = str(soup)
+                        modified = True
+
+                # Fix 3: Ensure dc:language exists (for OPF files)
+                if name.endswith(".opf"):
+                    if "<dc:language>" not in text and "<dc:language/>" not in text:
+                        # Add language after metadata opening tag
+                        text = re.sub(
+                            r"(<metadata[^>]*>)",
+                            r'\1\n    <dc:language>en</dc:language>',
+                            text,
+                            count=1,
+                        )
+                        modified = True
+
+                if modified:
+                    files_content[name] = text.encode("utf-8")
+
+            except (UnicodeDecodeError, UnicodeEncodeError):
+                pass
+
+    # Fix 2: Fix NCX links pointing to body IDs
+    for name, content in list(files_content.items()):
+        if name.endswith(".ncx"):
+            try:
+                text = content.decode("utf-8")
+                modified = False
+
+                for filename, body_id in body_ids.items():
+                    # Replace links like "file.xhtml#bodyId" with "file.xhtml"
+                    pattern = f'src="{filename}#{body_id}"'
+                    replacement = f'src="{filename}"'
+                    if pattern in text:
+                        text = text.replace(pattern, replacement)
+                        modified = True
+
+                    # Also check with path prefixes
+                    pattern_with_path = f'src="[^"]*/{filename}#{body_id}"'
+                    if re.search(pattern_with_path, text):
+                        text = re.sub(
+                            f'src="([^"]*)/{filename}#{body_id}"',
+                            f'src="\\1/{filename}"',
+                            text,
+                        )
+                        modified = True
+
+                if modified:
+                    files_content[name] = text.encode("utf-8")
+            except (UnicodeDecodeError, UnicodeEncodeError):
+                pass
+
+    # Rewrite the EPUB with proper structure
+    # mimetype must be first and uncompressed
+    with zipfile.ZipFile(epub_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Write mimetype first, uncompressed
+        if "mimetype" in files_content:
+            zf.writestr("mimetype", files_content["mimetype"], compress_type=zipfile.ZIP_STORED)
+
+        # Write all other files
+        for name, content in files_content.items():
+            if name != "mimetype":
+                zf.writestr(name, content)
 
 
 def _convert_epub_to_kindle(
@@ -515,15 +622,14 @@ def convert_to_epub(
 
         try:
             epub.write_epub(str(tmp_epub_path), book, {})
-            _scrub_epub_with_calibre(tmp_epub_path)  # Rebuild structure for Kindle
+            _scrub_epub_for_kindle(tmp_epub_path)
             _convert_epub_to_kindle(tmp_epub_path, output_path, output_format)
         finally:
             # Clean up temp file
             tmp_epub_path.unlink(missing_ok=True)
     else:
-        # Write EPUB directly
-        # Note: Don't use Calibre scrubbing for EPUB - it strips inline styles
-        # needed for math vertical alignment
+        # Write EPUB directly and scrub for Kindle compatibility
         epub.write_epub(str(output_path), book, {})
+        _scrub_epub_for_kindle(output_path)
 
     return output_path

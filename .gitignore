@@ -71,3 +71,5 @@ venv.bak/
 # Project specific
 *.epub
 output/
+htmlcov/
+.coverage

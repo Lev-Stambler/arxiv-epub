@@ -301,12 +301,47 @@ figure.ltx_figure table,
     border-radius: 3px;
 }
 
-/* Math blocks */
-.math-block, .ltx_equation, .ltx_equationgroup {
+/* Math blocks and equations */
+.math-block, .ltx_equationgroup {
     display: block;
-    margin: 1em 0;
+    margin: 1.5em 0;
     text-align: center;
-    padding: 0.5em;
+    padding: 0.5em 0;
+}
+
+/* Equation tables - need special handling */
+table.ltx_equation, table.ltx_eqn_table {
+    display: table;
+    width: 100%;
+    margin: 1.5em 0;
+    border: none;
+    font-size: 1em;
+}
+
+table.ltx_equation td,
+table.ltx_eqn_table td {
+    border: none;
+    padding: 0.75em 0.5em;
+    vertical-align: middle;
+}
+
+table.ltx_equation .ltx_eqn_cell,
+table.ltx_eqn_table .ltx_eqn_cell {
+    border: none;
+    background: none;
+}
+
+.ltx_eqn_center_padleft,
+.ltx_eqn_center_padright {
+    width: 5%;
+}
+
+/* Equation numbers */
+.ltx_tag_equation, .ltx_eqn_eqno {
+    text-align: right;
+    font-size: 0.9em;
+    color: #666;
+    vertical-align: middle;
 }
 
 .math-inline, .ltx_Math {
@@ -314,11 +349,11 @@ figure.ltx_figure table,
     font-size: 1em;
 }
 
-/* Equation numbers */
-.ltx_tag_equation {
-    float: right;
-    font-size: 0.9em;
-    color: #666;
+/* MathML display */
+math[display="block"] {
+    display: block;
+    margin: 1em auto;
+    text-align: center;
 }
 
 /* Citations */

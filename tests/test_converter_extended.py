@@ -322,6 +322,63 @@ class TestMathConversion:
         # Subscripts extend below baseline, should be negative
         assert depth_value < 0
 
+    def test_epub_preserves_inline_math_styles(self) -> None:
+        """Test that EPUB output preserves inline math class and style attributes.
+
+        This is a regression test for the bug where Calibre scrubbing was
+        stripping inline styles needed for math baseline alignment.
+        """
+        paper = Paper(
+            id="test.00001",
+            title="Inline Math Test",
+            authors=["Author"],
+            abstract="Testing inline math",
+            sections=[
+                Section(
+                    id="S1",
+                    title="Math Section",
+                    level=1,
+                    content='<p>The value <math alttext="x_i" display="inline"><mi>x</mi></math> is important.</p>',
+                )
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "inline_math_test.epub"
+            result = convert_to_epub(
+                paper,
+                output_path,
+                download_images=False,
+                render_math=True,
+            )
+
+            assert result.exists()
+
+            # Check that inline math styles are preserved in the EPUB
+            with zipfile.ZipFile(result, "r") as zf:
+                # Find section file
+                section_files = [n for n in zf.namelist() if "section_" in n]
+                assert len(section_files) >= 1
+
+                content = zf.read(section_files[0]).decode("utf-8")
+
+                # Must have math-inline class (not just math-image)
+                assert 'class="math-image math-inline"' in content, (
+                    "Inline math missing 'math-inline' class"
+                )
+
+                # Must have vertical-align style
+                assert "vertical-align:" in content, (
+                    "Inline math missing vertical-align style"
+                )
+
+                # Verify the style has em units
+                import re
+                match = re.search(r'style="vertical-align:\s*(-?[\d.]+)em;?"', content)
+                assert match is not None, (
+                    f"vertical-align style not found or malformed in: {content}"
+                )
+
     def test_convert_math_to_images_display(self) -> None:
         """Test converting display math to images."""
         html = '<div><math alttext="E = mc^2" display="block"><mi>E</mi></math></div>'

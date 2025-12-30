@@ -1,10 +1,8 @@
 """Convert parsed papers to EPUB and Kindle formats."""
 
-import re
 import shutil
 import subprocess
 import tempfile
-import zipfile
 from enum import Enum
 from pathlib import Path
 
@@ -30,68 +28,40 @@ def _check_calibre_available() -> bool:
     return shutil.which("ebook-convert") is not None
 
 
-def _scrub_epub(epub_path: Path) -> None:
-    """Scrub EPUB to fix encoding issues for Kindle compatibility.
+def _scrub_epub_with_calibre(epub_path: Path) -> None:
+    """Scrub EPUB using Calibre's EPUB-to-EPUB conversion for Kindle compatibility.
 
-    Amazon's Send to Kindle is stricter than standard readers about:
-    - Missing UTF-8 encoding declarations in XML headers
-    - Invalid XML characters
-    - Malformed XML structure
-
-    This function opens the EPUB (a ZIP file), processes each XHTML/XML file
-    to ensure proper encoding, and rewrites it.
+    Amazon's Send to Kindle is stricter than standard readers. Calibre's
+    ebook-convert rebuilds the internal XML structure, fixing encoding issues
+    and malformed markup that cause Kindle rejections.
 
     Args:
         epub_path: Path to the EPUB file to scrub (modified in place)
     """
-    # Read all files from the EPUB
-    files_content: dict[str, bytes] = {}
+    if not _check_calibre_available():
+        # Silently skip if Calibre not available - EPUB will still work
+        # on most readers, just might fail on Send to Kindle
+        return
 
-    with zipfile.ZipFile(epub_path, "r") as zf:
-        for name in zf.namelist():
-            files_content[name] = zf.read(name)
+    # Create a temporary file for the converted output
+    with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
 
-    # Process XHTML and XML files
-    for name, content in files_content.items():
-        if name.endswith((".xhtml", ".html", ".xml", ".opf", ".ncx")):
-            # Skip mimetype file
-            if name == "mimetype":
-                continue
-
-            try:
-                # Decode as UTF-8
-                text = content.decode("utf-8")
-
-                # Ensure XML declaration with UTF-8 encoding
-                if text.strip().startswith("<?xml"):
-                    # Replace existing declaration to ensure UTF-8 is explicit
-                    text = re.sub(
-                        r"<\?xml[^?]*\?>",
-                        '<?xml version="1.0" encoding="utf-8"?>',
-                        text,
-                        count=1,
-                    )
-                elif not text.strip().startswith("<!DOCTYPE"):
-                    # Add XML declaration if missing (and not just a DOCTYPE)
-                    text = '<?xml version="1.0" encoding="utf-8"?>\n' + text
-
-                # Remove invalid XML characters (control chars except tab, newline, carriage return)
-                text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-
-                # Re-encode to UTF-8
-                files_content[name] = text.encode("utf-8")
-            except (UnicodeDecodeError, UnicodeEncodeError):
-                # If we can't process it, leave it as-is
-                pass
-
-    # Rewrite the EPUB
-    with zipfile.ZipFile(epub_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for name, content in files_content.items():
-            # mimetype must be stored uncompressed and first
-            if name == "mimetype":
-                zf.writestr(name, content, compress_type=zipfile.ZIP_STORED)
-            else:
-                zf.writestr(name, content)
+    try:
+        # Convert EPUB to EPUB - this rebuilds the internal structure
+        result = subprocess.run(
+            ["ebook-convert", str(epub_path), str(tmp_path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        # Replace original with scrubbed version
+        shutil.move(str(tmp_path), str(epub_path))
+    except subprocess.CalledProcessError:
+        # If conversion fails, keep the original
+        tmp_path.unlink(missing_ok=True)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
 
 
 def _convert_epub_to_kindle(
@@ -545,14 +515,15 @@ def convert_to_epub(
 
         try:
             epub.write_epub(str(tmp_epub_path), book, {})
-            _scrub_epub(tmp_epub_path)  # Fix encoding for Kindle compatibility
+            _scrub_epub_with_calibre(tmp_epub_path)  # Rebuild structure for Kindle
             _convert_epub_to_kindle(tmp_epub_path, output_path, output_format)
         finally:
             # Clean up temp file
             tmp_epub_path.unlink(missing_ok=True)
     else:
         # Write EPUB directly
+        # Note: Don't use Calibre scrubbing for EPUB - it strips inline styles
+        # needed for math vertical alignment
         epub.write_epub(str(output_path), book, {})
-        _scrub_epub(output_path)  # Fix encoding for Kindle compatibility
 
     return output_path

@@ -1,0 +1,380 @@
+"""Responsive CSS styles for Kindle devices."""
+
+# Base stylesheet optimized for e-readers
+BASE_CSS = """
+/* Reset and base styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1em;
+    line-height: 1.6;
+    color: #000;
+    background: #fff;
+    padding: 1em;
+    text-align: justify;
+    -webkit-hyphens: auto;
+    hyphens: auto;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+    font-family: Helvetica, Arial, sans-serif;
+    font-weight: bold;
+    line-height: 1.3;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    text-align: left;
+}
+
+h1 {
+    font-size: 1.5em;
+    margin-top: 0;
+    page-break-before: always;
+}
+
+h2 {
+    font-size: 1.3em;
+}
+
+h3 {
+    font-size: 1.1em;
+}
+
+h4, h5, h6 {
+    font-size: 1em;
+}
+
+/* Paragraphs */
+p {
+    margin-bottom: 1em;
+    text-indent: 0;
+}
+
+p + p {
+    text-indent: 1.5em;
+    margin-top: 0;
+}
+
+/* Links */
+a {
+    color: #0066cc;
+    text-decoration: underline;
+}
+
+/* Images */
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1em auto;
+}
+
+figure {
+    margin: 1.5em 0;
+    text-align: center;
+    page-break-inside: avoid;
+}
+
+figcaption, .ltx_caption {
+    font-size: 0.9em;
+    font-style: italic;
+    margin-top: 0.5em;
+    text-align: center;
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+    font-size: 0.9em;
+}
+
+th, td {
+    border: 1px solid #ccc;
+    padding: 0.5em;
+    text-align: left;
+}
+
+th {
+    background: #f5f5f5;
+    font-weight: bold;
+}
+
+/* Code and preformatted text */
+pre, code {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 0.9em;
+    background: #f5f5f5;
+}
+
+pre {
+    padding: 1em;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+code {
+    padding: 0.2em 0.4em;
+}
+
+/* Blockquotes */
+blockquote {
+    margin: 1em 2em;
+    padding-left: 1em;
+    border-left: 3px solid #ccc;
+    font-style: italic;
+}
+
+/* Lists */
+ul, ol {
+    margin: 1em 0;
+    padding-left: 2em;
+}
+
+li {
+    margin-bottom: 0.5em;
+}
+
+/* Abstract styling */
+.abstract {
+    margin: 1.5em 0;
+    padding: 1em;
+    background: #f9f9f9;
+    border-left: 4px solid #666;
+}
+
+.abstract-title {
+    font-weight: bold;
+    font-size: 1.1em;
+    margin-bottom: 0.5em;
+}
+
+/* Author info */
+.authors {
+    font-style: italic;
+    margin-bottom: 1.5em;
+    text-align: center;
+}
+
+/* Math equations */
+math, .ltx_Math, .MathJax {
+    font-size: 1em;
+    display: inline;
+}
+
+.ltx_equation, .equation {
+    display: block;
+    margin: 1em 0;
+    text-align: center;
+    overflow-x: auto;
+}
+
+/* LaTeXML specific styles */
+.ltx_title {
+    font-weight: bold;
+}
+
+.ltx_para {
+    margin-bottom: 1em;
+}
+
+.ltx_item {
+    margin-bottom: 0.5em;
+}
+
+.ltx_theorem {
+    margin: 1.5em 0;
+    padding: 1em;
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+}
+
+.ltx_theorem_proof {
+    margin: 1em 0;
+    font-style: italic;
+}
+
+/* References */
+.ltx_bibliography, .references {
+    margin-top: 2em;
+}
+
+.ltx_bibitem {
+    margin-bottom: 1em;
+    padding-left: 2em;
+    text-indent: -2em;
+}
+
+/* Page break hints */
+.section, .ltx_section {
+    page-break-before: auto;
+}
+
+h1 {
+    page-break-after: avoid;
+}
+
+h2, h3 {
+    page-break-after: avoid;
+}
+
+figure, table {
+    page-break-inside: avoid;
+}
+"""
+
+# Media queries for Kindle devices
+KINDLE_MEDIA_QUERIES = """
+/* KF8 format (Kindle Fire, Paperwhite 2+) */
+@media amzn-kf8 {
+    body {
+        font-size: 1em;
+    }
+
+    h1 {
+        font-size: 1.4em;
+    }
+
+    h2 {
+        font-size: 1.2em;
+    }
+}
+
+/* Kindle Fire (color tablets) */
+@media amzn-kf8 and (device-aspect-ratio: 1280/800) {
+    body {
+        font-size: 1.1em;
+    }
+
+    img {
+        max-width: 100%;
+    }
+}
+
+/* Kindle Fire HD */
+@media amzn-kf8 and (device-aspect-ratio: 1920/1200) {
+    body {
+        font-size: 1.1em;
+    }
+}
+
+/* Smaller screens (Kindle Paperwhite, basic Kindle) */
+@media screen and (max-width: 600px) {
+    body {
+        padding: 0.5em;
+        font-size: 1em;
+    }
+
+    h1 {
+        font-size: 1.3em;
+    }
+
+    h2 {
+        font-size: 1.15em;
+    }
+
+    pre {
+        font-size: 0.8em;
+    }
+
+    table {
+        font-size: 0.8em;
+    }
+}
+
+/* Medium screens (Kindle Oasis, larger tablets) */
+@media screen and (min-width: 601px) and (max-width: 1024px) {
+    body {
+        font-size: 1.05em;
+        padding: 1em;
+    }
+}
+
+/* Larger screens */
+@media screen and (min-width: 1025px) {
+    body {
+        font-size: 1.1em;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2em;
+    }
+}
+"""
+
+# Style presets
+STYLE_PRESETS = {
+    "default": "",
+    "compact": """
+        body {
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+        p + p {
+            text-indent: 1em;
+        }
+        h1 { font-size: 1.3em; margin-top: 1em; }
+        h2 { font-size: 1.15em; }
+        h3 { font-size: 1em; }
+    """,
+    "large-text": """
+        body {
+            font-size: 1.2em;
+            line-height: 1.8;
+        }
+        h1 { font-size: 1.6em; }
+        h2 { font-size: 1.4em; }
+        h3 { font-size: 1.2em; }
+    """,
+}
+
+
+def get_stylesheet(preset: str = "default") -> str:
+    """Get the complete stylesheet for EPUB.
+
+    Args:
+        preset: Style preset name ("default", "compact", "large-text")
+
+    Returns:
+        Complete CSS stylesheet
+    """
+    preset_css = STYLE_PRESETS.get(preset, "")
+    return f"{BASE_CSS}\n{KINDLE_MEDIA_QUERIES}\n{preset_css}"
+
+
+def get_cover_css() -> str:
+    """Get CSS for the cover page."""
+    return """
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            text-align: center;
+            padding: 2em;
+        }
+
+        h1 {
+            font-size: 1.8em;
+            margin-bottom: 1em;
+            line-height: 1.3;
+        }
+
+        .authors {
+            font-size: 1.2em;
+            font-style: italic;
+            margin-bottom: 2em;
+        }
+
+        .paper-id {
+            font-size: 0.9em;
+            color: #666;
+        }
+    """

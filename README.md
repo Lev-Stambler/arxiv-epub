@@ -24,6 +24,7 @@ uv run streamlit run src/arxiv_to_ereader/web.py
 ## Features
 
 - **Multiple Formats**: Output to EPUB, MOBI, or AZW3 (native Kindle format)
+- **Math Rendering**: LaTeX equations converted to images for Kindle compatibility
 - **Simple CLI**: Convert papers with a single command
 - **Batch Processing**: Convert multiple papers at once
 - **Web Interface**: Optional Streamlit UI for non-technical users
@@ -81,6 +82,12 @@ uv run arxiv-to-ereader 2402.08954 --style large-text
 
 # Skip images for faster/smaller files
 uv run arxiv-to-ereader 2402.08954 --no-images
+
+# Keep MathML instead of rendering to images (not recommended for Kindle)
+uv run arxiv-to-ereader 2402.08954 --no-math-images
+
+# Increase math image resolution for larger screens
+uv run arxiv-to-ereader 2402.08954 --math-dpi 200
 ```
 
 ### Output Formats
@@ -124,11 +131,20 @@ paper_id, html = fetch_paper("2402.08954")
 paper = parse_paper(html, paper_id)
 epub_path = convert_to_epub(paper, output_path="paper.epub")
 
-# Convert to native Kindle format (AZW3)
+# Convert to native Kindle format (AZW3) with math as images
 azw3_path = convert_to_epub(
     paper,
     output_path="paper.azw3",
-    output_format=OutputFormat.AZW3
+    output_format=OutputFormat.AZW3,
+    render_math=True,  # Convert LaTeX to images (default)
+    math_dpi=150,      # Image resolution
+)
+
+# Keep MathML (for EPUB readers that support it)
+epub_path = convert_to_epub(
+    paper,
+    output_path="paper.epub",
+    render_math=False,
 )
 
 print(f"Created: {azw3_path}")
@@ -146,7 +162,7 @@ print(f"Authors: {', '.join(paper.authors)}")
 
 - Only works with arXiv papers that have HTML versions
 - Papers submitted before December 2023 may not have HTML available
-- Complex mathematical equations may not render perfectly on all e-readers
+- Very complex LaTeX equations may fall back to simplified rendering
 - MOBI/AZW3 conversion requires Calibre to be installed
 
 ## Development
@@ -170,14 +186,16 @@ uv run ruff check src tests
 
 1. **Fetch**: Downloads the HTML version of the paper from arXiv
 2. **Parse**: Extracts title, authors, abstract, sections, figures, and references
-3. **Convert**: Creates an EPUB file using ebooklib with responsive CSS styling
-4. **Transform** (optional): Converts EPUB to Kindle formats using Calibre
+3. **Render Math**: Converts LaTeX equations to PNG images using matplotlib (for Kindle compatibility)
+4. **Convert**: Creates an EPUB file using ebooklib with responsive CSS styling
+5. **Transform** (optional): Converts EPUB to Kindle formats using Calibre
 
 The generated ebook includes:
 - Cover page with title, authors, and paper ID
 - Abstract
-- All paper sections
+- All paper sections with math rendered as images
 - Embedded figures (optional)
+- Footnotes
 - References
 - Responsive CSS optimized for e-reader devices
 
@@ -189,6 +207,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 - [arXiv](https://arxiv.org) for providing HTML versions of papers
 - [ebooklib](https://github.com/aerkalov/ebooklib) for EPUB generation
+- [matplotlib](https://matplotlib.org) for LaTeX equation rendering
 - [Calibre](https://calibre-ebook.com) for Kindle format conversion
 - [LaTeXML](https://dlmf.nist.gov/LaTeXML/) which powers arXiv's HTML conversion
 

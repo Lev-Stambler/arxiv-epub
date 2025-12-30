@@ -105,6 +105,7 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
     7. Strip SVG elements (Kindle requires proper namespace declarations)
     8. Remove broken internal fragment links (citations pointing to non-existent IDs)
     9. Fix block elements inside inline elements (div inside span)
+    10. Convert HTML5 semantic elements to div (figure, section, nav, etc.)
 
     Args:
         epub_path: Path to the EPUB file to scrub (modified in place)
@@ -222,6 +223,23 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
                             if elem.find(block_tags):
                                 # Convert inline to div while preserving attributes
                                 elem.name = "div"
+                                soup_modified = True
+
+                    # Fix 10: Convert HTML5 semantic elements to div/span
+                    # Kindle's parser may reject these newer elements
+                    # Skip nav.xhtml as it requires the nav element for EPUB 3 compliance
+                    if not name.endswith("nav.xhtml"):
+                        html5_block_to_div = ["figure", "figcaption", "section", "article",
+                                              "aside", "header", "footer", "main"]
+                        for tag_name in html5_block_to_div:
+                            for elem in soup.find_all(tag_name):
+                                elem.name = "div"
+                                # Add a class to preserve semantic meaning for CSS
+                                existing_class = elem.get("class", [])
+                                if isinstance(existing_class, str):
+                                    existing_class = [existing_class]
+                                existing_class.append(f"_{tag_name}")
+                                elem["class"] = existing_class
                                 soup_modified = True
 
                     if soup_modified:
@@ -533,8 +551,15 @@ def _convert_math_to_images(
                 math_elem.replace_with(wrapper)
             else:
                 # For inline math, add styles for baseline alignment and size constraint
-                # Height constraint ensures inline math doesn't become huge
-                style_parts = ["height: 1em", "max-height: 1.2em"]
+                # These override the base img styles (min-width: 60%, display: block)
+                style_parts = [
+                    "display: inline",
+                    "height: 1em",
+                    "max-height: 1.2em",
+                    "width: auto",
+                    "min-width: 0",
+                    "margin: 0",
+                ]
                 if math_img.depth_em != 0:
                     style_parts.append(f"vertical-align: {math_img.depth_em:.2f}em")
                 img_tag["style"] = "; ".join(style_parts) + ";"

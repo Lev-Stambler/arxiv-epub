@@ -66,8 +66,8 @@ a {
     text-decoration: underline;
 }
 
-/* Images */
-img {
+/* Images (excluding inline math) */
+img:not(.math-inline) {
     max-width: 100%;
     min-width: 60%;
     height: auto;
@@ -385,6 +385,7 @@ math[display="block"] {
     height: 1em;
     max-height: 1.2em;
     width: auto;
+    margin: 0;
     vertical-align: -0.2em;  /* Default fallback for inline math baseline alignment */
 }
 

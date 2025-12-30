@@ -15,6 +15,10 @@ uv run arxiv-to-ereader 2402.08954
 
 # Convert to native Kindle format (requires Calibre)
 uv run arxiv-to-ereader 2402.08954 --format azw3
+
+# Or use the web interface
+uv sync --extra web
+uv run streamlit run src/arxiv_to_ereader/web.py
 ```
 
 ## Features
@@ -29,18 +33,12 @@ uv run arxiv-to-ereader 2402.08954 --format azw3
 
 ## Installation
 
-### From source (recommended)
+### From source
 
 ```bash
 git clone https://github.com/Lev-Stambler/arxiv-to-ereader.git
 cd arxiv-to-ereader
 uv sync
-```
-
-### Using pip
-
-```bash
-pip install arxiv-to-ereader
 ```
 
 ### Kindle Format Support (Optional)

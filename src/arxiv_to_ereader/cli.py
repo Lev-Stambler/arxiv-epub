@@ -2,6 +2,9 @@
 
 import asyncio
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Annotated
 
@@ -19,6 +22,9 @@ from arxiv_to_ereader.fetcher import (
     normalize_arxiv_id,
 )
 from arxiv_to_ereader.parser import parse_paper
+
+# Check if Calibre is available
+calibre_available = shutil.which("ebook-convert") is not None
 
 
 def sanitize_filename(title: str, max_length: int = 80) -> str:
@@ -126,6 +132,13 @@ def convert(
             help="Use arXiv ID for filename instead of paper title",
         ),
     ] = False,
+    kindle_safe: Annotated[
+        bool,
+        typer.Option(
+            "--kindle-safe/--no-kindle-safe",
+            help="Run EPUB through Calibre for maximum Kindle compatibility (default: enabled)",
+        ),
+    ] = True,
     version: Annotated[
         bool | None,
         typer.Option(
@@ -164,11 +177,17 @@ def convert(
     if output:
         output.mkdir(parents=True, exist_ok=True)
 
+    # Check Calibre for kindle_safe
+    kindle_safe_actual = kindle_safe
+    if kindle_safe and not calibre_available:
+        console.print("[yellow]Warning:[/yellow] --kindle-safe requires Calibre but it's not installed. Proceeding without it.")
+        kindle_safe_actual = False
+
     # Process single paper or batch
     if len(papers) == 1:
-        _convert_single(papers[0], output, style, not no_images, output_format, not no_math_images, math_dpi, use_id)
+        _convert_single(papers[0], output, style, not no_images, output_format, not no_math_images, math_dpi, use_id, kindle_safe_actual)
     else:
-        _convert_batch(papers, output, style, not no_images, output_format, not no_math_images, math_dpi, use_id)
+        _convert_batch(papers, output, style, not no_images, output_format, not no_math_images, math_dpi, use_id, kindle_safe_actual)
 
 
 def _convert_single(
@@ -180,6 +199,7 @@ def _convert_single(
     render_math: bool,
     math_dpi: int,
     use_id: bool,
+    kindle_safe: bool,
 ) -> None:
     """Convert a single paper."""
     with Progress(
@@ -240,6 +260,28 @@ def _convert_single(
 
         progress.stop()
 
+    # Run through Calibre for maximum Kindle compatibility
+    if kindle_safe and output_format == OutputFormat.EPUB:
+        console.print("[dim]Running through Calibre for Kindle compatibility...[/dim]")
+        with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        try:
+            result = subprocess.run(
+                ["ebook-convert", str(ebook_path), str(tmp_path), "--epub-version=3"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode == 0:
+                # Replace original with cleaned version
+                shutil.move(str(tmp_path), str(ebook_path))
+            else:
+                console.print(f"[yellow]Warning:[/yellow] Calibre cleaning failed: {result.stderr[:200]}")
+        except Exception as e:
+            console.print(f"[yellow]Warning:[/yellow] Calibre cleaning failed: {e}")
+        finally:
+            tmp_path.unlink(missing_ok=True)
+
     console.print(f"[green]Success![/green] Created: {ebook_path}")
     console.print(f"  Title: {paper.title}")
     console.print(f"  Authors: {', '.join(paper.authors)}")
@@ -266,6 +308,7 @@ def _convert_batch(
     render_math: bool,
     math_dpi: int,
     use_id: bool,
+    kindle_safe: bool = False,
 ) -> None:
     """Convert multiple papers."""
     format_name = output_format.value.upper()
@@ -319,6 +362,24 @@ def _convert_batch(
                 render_math=render_math,
                 math_dpi=math_dpi,
             )
+
+            # Run through Calibre for maximum Kindle compatibility
+            if kindle_safe and output_format == OutputFormat.EPUB:
+                with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
+                    tmp_path = Path(tmp.name)
+                try:
+                    result = subprocess.run(
+                        ["ebook-convert", str(ebook_path), str(tmp_path), "--epub-version=3"],
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    if result.returncode == 0:
+                        shutil.move(str(tmp_path), str(ebook_path))
+                except Exception:
+                    pass
+                finally:
+                    tmp_path.unlink(missing_ok=True)
 
             console.print(f"[green]Created:[/green] {ebook_path}")
 

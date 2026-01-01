@@ -2,9 +2,6 @@
 
 import asyncio
 import re
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import Annotated
 
@@ -13,7 +10,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from arxiv_to_ereader import __version__
-from arxiv_to_ereader.converter import OutputFormat, convert_to_epub, validate_epub
+from arxiv_to_ereader.converter import convert_to_epub, validate_epub
 from arxiv_to_ereader.fetcher import (
     ArxivFetchError,
     ArxivHTMLNotAvailable,
@@ -23,8 +20,6 @@ from arxiv_to_ereader.fetcher import (
 )
 from arxiv_to_ereader.parser import parse_paper
 
-# Check if Calibre is available
-calibre_available = shutil.which("ebook-convert") is not None
 
 
 def sanitize_filename(title: str, max_length: int = 80) -> str:
@@ -88,14 +83,6 @@ def convert(
             help="Output directory for ebook files",
         ),
     ] = None,
-    format: Annotated[
-        str,
-        typer.Option(
-            "--format",
-            "-f",
-            help="Output format: epub, mobi, or azw3 (Kindle)",
-        ),
-    ] = "epub",
     style: Annotated[
         str,
         typer.Option(
@@ -132,13 +119,6 @@ def convert(
             help="Use arXiv ID for filename instead of paper title",
         ),
     ] = False,
-    kindle_safe: Annotated[
-        bool,
-        typer.Option(
-            "--kindle-safe/--no-kindle-safe",
-            help="Run EPUB through Calibre for maximum Kindle compatibility (default: enabled)",
-        ),
-    ] = True,
     version: Annotated[
         bool | None,
         typer.Option(
@@ -150,15 +130,13 @@ def convert(
         ),
     ] = None,
 ) -> None:
-    """Convert arXiv papers to EPUB or Kindle format.
+    """Convert arXiv papers to EPUB format.
 
     Examples:
 
         arxiv-to-ereader 2402.08954
 
-        arxiv-to-ereader 2402.08954 --format azw3
-
-        arxiv-to-ereader 2402.08954 2401.12345 -o ~/kindle/ -f mobi
+        arxiv-to-ereader 2402.08954 2401.12345 -o ~/kindle/
 
         arxiv-to-ereader https://arxiv.org/abs/2402.08954 --style large-text
     """
@@ -166,28 +144,15 @@ def convert(
         console.print(f"[red]Error:[/red] Invalid style '{style}'. Use default, compact, or large-text.")
         raise typer.Exit(1)
 
-    # Validate format
-    try:
-        output_format = OutputFormat(format.lower())
-    except ValueError:
-        console.print(f"[red]Error:[/red] Invalid format '{format}'. Use epub, mobi, or azw3.")
-        raise typer.Exit(1)
-
     # Create output directory if specified
     if output:
         output.mkdir(parents=True, exist_ok=True)
 
-    # Check Calibre for kindle_safe
-    kindle_safe_actual = kindle_safe
-    if kindle_safe and not calibre_available:
-        console.print("[yellow]Warning:[/yellow] --kindle-safe requires Calibre but it's not installed. Proceeding without it.")
-        kindle_safe_actual = False
-
     # Process single paper or batch
     if len(papers) == 1:
-        _convert_single(papers[0], output, style, not no_images, output_format, not no_math_images, math_dpi, use_id, kindle_safe_actual)
+        _convert_single(papers[0], output, style, not no_images, not no_math_images, math_dpi, use_id)
     else:
-        _convert_batch(papers, output, style, not no_images, output_format, not no_math_images, math_dpi, use_id, kindle_safe_actual)
+        _convert_batch(papers, output, style, not no_images, not no_math_images, math_dpi, use_id)
 
 
 def _convert_single(
@@ -195,11 +160,9 @@ def _convert_single(
     output_dir: Path | None,
     style: str,
     download_images: bool,
-    output_format: OutputFormat,
     render_math: bool,
     math_dpi: int,
     use_id: bool,
-    kindle_safe: bool,
 ) -> None:
     """Convert a single paper."""
     with Progress(
@@ -233,8 +196,7 @@ def _convert_single(
         # Parse HTML
         paper = parse_paper(html, paper_id)
 
-        format_name = output_format.value.upper()
-        progress.update(task, description=f"Converting {paper_id} to {format_name}...")
+        progress.update(task, description=f"Converting {paper_id} to EPUB...")
 
         # Determine output path - use paper title by default, arXiv ID if --use-id
         if use_id:
@@ -243,60 +205,36 @@ def _convert_single(
             filename = sanitize_filename(paper.title)
 
         if output_dir:
-            output_path = output_dir / f"{filename}.{output_format.value}"
+            output_path = output_dir / f"{filename}.epub"
         else:
-            output_path = Path(f"{filename}.{output_format.value}")
+            output_path = Path(f"{filename}.epub")
 
-        # Convert to ebook
+        # Convert to EPUB
         ebook_path = convert_to_epub(
             paper,
             output_path=output_path,
             style_preset=style,
             download_images=download_images,
-            output_format=output_format,
             render_math=render_math,
             math_dpi=math_dpi,
         )
 
         progress.stop()
 
-    # Run through Calibre for maximum Kindle compatibility
-    if kindle_safe and output_format == OutputFormat.EPUB:
-        console.print("[dim]Running through Calibre for Kindle compatibility...[/dim]")
-        with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
-            tmp_path = Path(tmp.name)
-        try:
-            result = subprocess.run(
-                ["ebook-convert", str(ebook_path), str(tmp_path), "--epub-version=3"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            if result.returncode == 0:
-                # Replace original with cleaned version
-                shutil.move(str(tmp_path), str(ebook_path))
-            else:
-                console.print(f"[yellow]Warning:[/yellow] Calibre cleaning failed: {result.stderr[:200]}")
-        except Exception as e:
-            console.print(f"[yellow]Warning:[/yellow] Calibre cleaning failed: {e}")
-        finally:
-            tmp_path.unlink(missing_ok=True)
-
     console.print(f"[green]Success![/green] Created: {ebook_path}")
     console.print(f"  Title: {paper.title}")
     console.print(f"  Authors: {', '.join(paper.authors)}")
 
-    # Validate EPUB if it's an epub format
-    if output_format == OutputFormat.EPUB:
-        is_valid, errors = validate_epub(ebook_path)
-        if not is_valid:
-            console.print()
-            console.print("[bold yellow]WARNING: EPUB validation failed![/bold yellow]")
-            console.print("[yellow]This EPUB may be rejected by Send to Kindle.[/yellow]")
-            for error in errors[:5]:  # Show first 5 errors
-                console.print(f"[dim]  {error}[/dim]")
-            if len(errors) > 5:
-                console.print(f"[dim]  ... and {len(errors) - 5} more errors[/dim]")
+    # Validate EPUB
+    is_valid, errors = validate_epub(ebook_path)
+    if not is_valid:
+        console.print()
+        console.print("[bold yellow]WARNING: EPUB validation failed![/bold yellow]")
+        console.print("[yellow]This EPUB may be rejected by Send to Kindle.[/yellow]")
+        for error in errors[:5]:  # Show first 5 errors
+            console.print(f"[dim]  {error}[/dim]")
+        if len(errors) > 5:
+            console.print(f"[dim]  ... and {len(errors) - 5} more errors[/dim]")
 
 
 def _convert_batch(
@@ -304,15 +242,12 @@ def _convert_batch(
     output_dir: Path | None,
     style: str,
     download_images: bool,
-    output_format: OutputFormat,
     render_math: bool,
     math_dpi: int,
     use_id: bool,
-    kindle_safe: bool = False,
 ) -> None:
     """Convert multiple papers."""
-    format_name = output_format.value.upper()
-    console.print(f"Converting {len(paper_inputs)} papers to {format_name}...")
+    console.print(f"Converting {len(paper_inputs)} papers to EPUB...")
 
     # Fetch all papers concurrently
     with Progress(
@@ -348,46 +283,26 @@ def _convert_batch(
                 filename = sanitize_filename(paper.title)
 
             if output_dir:
-                output_path = output_dir / f"{filename}.{output_format.value}"
+                output_path = output_dir / f"{filename}.epub"
             else:
-                output_path = Path(f"{filename}.{output_format.value}")
+                output_path = Path(f"{filename}.epub")
 
-            # Convert to ebook
+            # Convert to EPUB
             ebook_path = convert_to_epub(
                 paper,
                 output_path=output_path,
                 style_preset=style,
                 download_images=download_images,
-                output_format=output_format,
                 render_math=render_math,
                 math_dpi=math_dpi,
             )
 
-            # Run through Calibre for maximum Kindle compatibility
-            if kindle_safe and output_format == OutputFormat.EPUB:
-                with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
-                    tmp_path = Path(tmp.name)
-                try:
-                    result = subprocess.run(
-                        ["ebook-convert", str(ebook_path), str(tmp_path), "--epub-version=3"],
-                        capture_output=True,
-                        text=True,
-                        timeout=120,
-                    )
-                    if result.returncode == 0:
-                        shutil.move(str(tmp_path), str(ebook_path))
-                except Exception:
-                    pass
-                finally:
-                    tmp_path.unlink(missing_ok=True)
-
             console.print(f"[green]Created:[/green] {ebook_path}")
 
-            # Validate EPUB if it's an epub format
-            if output_format == OutputFormat.EPUB:
-                is_valid, errors = validate_epub(ebook_path)
-                if not is_valid:
-                    console.print(f"  [yellow]WARNING: Validation failed ({len(errors)} errors)[/yellow]")
+            # Validate EPUB
+            is_valid, errors = validate_epub(ebook_path)
+            if not is_valid:
+                console.print(f"  [yellow]WARNING: Validation failed ({len(errors)} errors)[/yellow]")
 
             success_count += 1
 

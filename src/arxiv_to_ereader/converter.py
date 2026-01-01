@@ -1,11 +1,9 @@
-"""Convert parsed papers to EPUB and Kindle formats."""
+"""Convert parsed papers to EPUB format."""
 
 import re
 import shutil
 import subprocess
-import tempfile
 import zipfile
-from enum import Enum
 from pathlib import Path
 
 import httpx
@@ -15,19 +13,6 @@ from ebooklib import epub
 from arxiv_to_ereader.math_renderer import MathImage, render_latex_to_image
 from arxiv_to_ereader.parser import Paper
 from arxiv_to_ereader.styles import get_cover_css, get_stylesheet
-
-
-class OutputFormat(str, Enum):
-    """Supported output formats."""
-
-    EPUB = "epub"
-    MOBI = "mobi"
-    AZW3 = "azw3"
-
-
-def _check_calibre_available() -> bool:
-    """Check if Calibre's ebook-convert is available."""
-    return shutil.which("ebook-convert") is not None
 
 
 def validate_epub(epub_path: Path) -> tuple[bool, list[str]]:
@@ -91,26 +76,20 @@ def validate_epub(epub_path: Path) -> tuple[bool, list[str]]:
 
 
 def _scrub_epub_for_kindle(epub_path: Path) -> None:
-    """Scrub EPUB for Kindle compatibility without requiring Calibre.
+    """Scrub EPUB for Kindle compatibility.
 
-    Amazon's Send to Kindle is stricter than standard readers. This function
-    applies fixes based on kindle-epub-fix (https://github.com/innocenat/kindle-epub-fix):
+    Amazon officially supports EPUB (since 2022). The main compatibility issues are:
+    1. Missing UTF-8 encoding declaration (Amazon assumes ISO-8859-1 otherwise)
+    2. NCX links pointing to body IDs with fragment hashes
+    3. Missing dc:language metadata
+    4. <img> tags without src attributes
+    5. Remaining MathML elements (we render to images, but catch any stragglers)
 
-    1. Add UTF-8 encoding declarations (Amazon assumes ISO-8859-1 otherwise)
-    2. Fix NCX links pointing to body IDs (Amazon rejects these)
-    3. Ensure dc:language metadata exists
-    4. Remove <img> tags without src attributes
-    5. Strip MathML elements (Kindle doesn't support them; keeps alttext as fallback)
-    6. Remove empty <ol/> tags (invalid in EPUB nav)
-    7. Strip SVG elements (Kindle requires proper namespace declarations)
-    8. Remove broken internal fragment links (citations pointing to non-existent IDs)
-    9. Fix block elements inside inline elements (div inside span)
-    10. Convert HTML5 semantic elements to div (figure, section, nav, etc.)
+    Based on: https://kindle-epub-fix.netlify.app/
 
     Args:
         epub_path: Path to the EPUB file to scrub (modified in place)
     """
-    # Read all files from the EPUB
     files_content: dict[str, bytes] = {}
     with zipfile.ZipFile(epub_path, "r") as zf:
         for name in zf.namelist():
@@ -119,32 +98,26 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
     # Track body IDs for NCX fix
     body_ids: dict[str, str] = {}  # filename -> body_id
 
-    # Process each file
     for name, content in list(files_content.items()):
         if name == "mimetype":
             continue
 
-        # Process XML/HTML files
         if name.endswith((".xhtml", ".html", ".xml", ".opf", ".ncx")):
             try:
                 text = content.decode("utf-8")
                 modified = False
 
                 # Fix 1: Ensure UTF-8 encoding declaration
-                if text.lstrip().startswith("<?xml"):
-                    # Replace existing declaration to ensure UTF-8 is explicit
-                    new_text = re.sub(
-                        r"<\?xml[^?]*\?>",
+                if not text.lstrip().startswith("<?xml"):
+                    text = '<?xml version="1.0" encoding="utf-8"?>\n' + text
+                    modified = True
+                elif 'encoding=' not in text.split('?>')[0]:
+                    text = re.sub(
+                        r"<\?xml([^?]*)\?>",
                         '<?xml version="1.0" encoding="utf-8"?>',
                         text,
                         count=1,
                     )
-                    if new_text != text:
-                        text = new_text
-                        modified = True
-                elif not text.lstrip().startswith("<!DOCTYPE"):
-                    # Add declaration if missing
-                    text = '<?xml version="1.0" encoding="utf-8"?>\n' + text
                     modified = True
 
                 # Remove invalid XML control characters
@@ -153,15 +126,14 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
                     text = cleaned
                     modified = True
 
-                # Process XHTML files for Kindle compatibility
+                # Process XHTML files
                 if name.endswith((".xhtml", ".html")):
                     soup = BeautifulSoup(text, "lxml-xml")
                     soup_modified = False
 
-                    # Find body ID for NCX fix
+                    # Track body ID for NCX fix
                     body = soup.find("body")
                     if body and body.get("id"):
-                        # Extract just the filename without path
                         filename = name.split("/")[-1]
                         body_ids[filename] = body["id"]
 
@@ -171,8 +143,7 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
                             img.decompose()
                             soup_modified = True
 
-                    # Fix 5: Strip MathML (Kindle doesn't support it)
-                    # Replace with alttext or empty string as fallback
+                    # Fix 5: Strip any remaining MathML (should already be images)
                     for math in soup.find_all("math"):
                         alt = math.get("alttext", "")
                         if alt:
@@ -181,81 +152,13 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
                             math.decompose()
                         soup_modified = True
 
-                    # Fix 6: Remove empty <ol/> tags (invalid in EPUB nav)
-                    for ol in soup.find_all("ol"):
-                        if not ol.find("li"):
-                            ol.decompose()
-                            soup_modified = True
-
-                    # Fix 7: Strip SVG elements (Kindle requires proper namespace)
-                    # SVG diagrams from LaTeXML don't have proper EPUB namespace declarations
-                    for svg in soup.find_all("svg"):
-                        # Try to keep alt text if available from parent figure
-                        parent_figure = svg.find_parent("figure")
-                        if parent_figure:
-                            figcaption = parent_figure.find("figcaption")
-                            if figcaption:
-                                # Keep figure with caption, just remove SVG
-                                svg.decompose()
-                                soup_modified = True
-                                continue
-                        svg.decompose()
-                        soup_modified = True
-
-                    # Fix 8: Remove broken/external links
-                    # - Citations often link to #bib.bibXXX which may not exist
-                    # - External http(s) links may cause Kindle rejection
-                    for a in soup.find_all("a", href=True):
-                        href = a.get("href", "")
-                        if href.startswith("#"):
-                            # Check if target exists in this document
-                            target_id = href[1:]
-                            if not soup.find(id=target_id) and not soup.find(attrs={"name": target_id}):
-                                # Remove href but keep the link text
-                                del a["href"]
-                                soup_modified = True
-                        elif href.startswith(("http://", "https://")):
-                            # Remove external links (Kindle may reject these)
-                            del a["href"]
-                            soup_modified = True
-
-                    # Fix 9: Fix block elements inside inline elements
-                    # Convert span containing div/table/figure to div
-                    inline_tags = {"span", "a", "em", "strong", "b", "i", "u", "sub", "sup", "code"}
-                    block_tags = {"div", "table", "figure", "p", "ul", "ol", "blockquote", "pre"}
-                    for tag_name in inline_tags:
-                        for elem in soup.find_all(tag_name):
-                            if elem.find(block_tags):
-                                # Convert inline to div while preserving attributes
-                                elem.name = "div"
-                                soup_modified = True
-
-                    # Fix 10: Convert HTML5 semantic elements to div/span
-                    # Kindle's parser may reject these newer elements
-                    # Skip nav.xhtml as it requires the nav element for EPUB 3 compliance
-                    if not name.endswith("nav.xhtml"):
-                        html5_block_to_div = ["figure", "figcaption", "section", "article",
-                                              "aside", "header", "footer", "main"]
-                        for tag_name in html5_block_to_div:
-                            for elem in soup.find_all(tag_name):
-                                elem.name = "div"
-                                # Add a class to preserve semantic meaning for CSS
-                                existing_class = elem.get("class", [])
-                                if isinstance(existing_class, str):
-                                    existing_class = [existing_class]
-                                existing_class.append(f"_{tag_name}")
-                                elem["class"] = existing_class
-                                soup_modified = True
-
                     if soup_modified:
-                        # Only re-serialize if we actually modified something
                         text = str(soup)
                         modified = True
 
                 # Fix 3: Ensure dc:language exists (for OPF files)
                 if name.endswith(".opf"):
                     if "<dc:language>" not in text and "<dc:language/>" not in text:
-                        # Add language after metadata opening tag
                         text = re.sub(
                             r"(<metadata[^>]*>)",
                             r'\1\n    <dc:language>en</dc:language>',
@@ -278,7 +181,6 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
                 modified = False
 
                 for filename, body_id in body_ids.items():
-                    # Replace links like "file.xhtml#bodyId" with "file.xhtml"
                     pattern = f'src="{filename}#{body_id}"'
                     replacement = f'src="{filename}"'
                     if pattern in text:
@@ -300,56 +202,14 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
             except (UnicodeDecodeError, UnicodeEncodeError):
                 pass
 
-    # Rewrite the EPUB with proper structure
-    # mimetype must be first and uncompressed
+    # Rewrite the EPUB (mimetype must be first and uncompressed)
     with zipfile.ZipFile(epub_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Write mimetype first, uncompressed
         if "mimetype" in files_content:
             zf.writestr("mimetype", files_content["mimetype"], compress_type=zipfile.ZIP_STORED)
 
-        # Write all other files
         for name, content in files_content.items():
             if name != "mimetype":
                 zf.writestr(name, content)
-
-
-def _convert_epub_to_kindle(
-    epub_path: Path,
-    output_path: Path,
-    output_format: OutputFormat,
-) -> Path:
-    """Convert EPUB to Kindle format using Calibre's ebook-convert.
-
-    Args:
-        epub_path: Path to the source EPUB file
-        output_path: Path for the output file
-        output_format: Target format (mobi or azw3)
-
-    Returns:
-        Path to the converted file
-
-    Raises:
-        RuntimeError: If Calibre is not installed or conversion fails
-    """
-    if not _check_calibre_available():
-        raise RuntimeError(
-            "Calibre's ebook-convert not found. Install Calibre to convert to Kindle formats.\n"
-            "  - macOS: brew install calibre\n"
-            "  - Ubuntu/Debian: sudo apt install calibre\n"
-            "  - Or download from: https://calibre-ebook.com/download"
-        )
-
-    try:
-        result = subprocess.run(
-            ["ebook-convert", str(epub_path), str(output_path)],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Calibre conversion failed: {e.stderr}") from e
-
-    return output_path
 
 
 def _create_cover_chapter(paper: Paper) -> epub.EpubHtml:
@@ -603,28 +463,23 @@ def convert_to_epub(
     output_path: Path | str | None = None,
     style_preset: str = "default",
     download_images: bool = True,
-    output_format: OutputFormat | str = OutputFormat.EPUB,
     render_math: bool = True,
     math_dpi: int = 150,
 ) -> Path:
-    """Convert a parsed paper to EPUB or Kindle format.
+    """Convert a parsed paper to EPUB format.
 
     Args:
         paper: Parsed Paper object
-        output_path: Output file path (defaults to {paper_id}.{format} in current directory)
+        output_path: Output file path (defaults to {paper_id}.epub in current directory)
         style_preset: Style preset name ("default", "compact", "large-text")
         download_images: Whether to download and embed images
-        output_format: Output format ("epub", "mobi", or "azw3")
-        render_math: Whether to convert math equations to images (recommended for Kindle)
+        render_math: Whether to convert math equations to images
         math_dpi: DPI resolution for rendered math images
 
     Returns:
-        Path to the created ebook file
+        Path to the created EPUB file
     """
-    # Normalize format
-    if isinstance(output_format, str):
-        output_format = OutputFormat(output_format.lower())
-    # Create EPUB book
+    # Create EPUB book (EPUB 3 - Amazon officially supports EPUB since 2022)
     book = epub.EpubBook()
 
     # Set metadata
@@ -746,42 +601,24 @@ def convert_to_epub(
     # Create table of contents
     book.toc = [(chapter, []) for chapter in chapters]
 
-    # Add navigation files
+    # Add navigation files (NCX for compatibility, Nav for EPUB 3)
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
-
-    # Set spine (reading order)
     book.spine = ["nav"] + chapters
 
     # Determine output path
-    file_ext = output_format.value
     if output_path is None:
-        output_path = Path(f"{paper.id.replace('/', '_')}.{file_ext}")
+        output_path = Path(f"{paper.id.replace('/', '_')}.epub")
     else:
         output_path = Path(output_path)
-        # Update extension if format specified but path has wrong extension
-        if output_path.suffix.lower() != f".{file_ext}":
-            output_path = output_path.with_suffix(f".{file_ext}")
+        if output_path.suffix.lower() != ".epub":
+            output_path = output_path.with_suffix(".epub")
 
     # Create parent directories if needed
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # For Kindle formats, we need to first create an EPUB then convert
-    if output_format in (OutputFormat.MOBI, OutputFormat.AZW3):
-        # Create temporary EPUB
-        with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
-            tmp_epub_path = Path(tmp.name)
-
-        try:
-            epub.write_epub(str(tmp_epub_path), book, {})
-            _scrub_epub_for_kindle(tmp_epub_path)
-            _convert_epub_to_kindle(tmp_epub_path, output_path, output_format)
-        finally:
-            # Clean up temp file
-            tmp_epub_path.unlink(missing_ok=True)
-    else:
-        # Write EPUB directly and scrub for Kindle compatibility
-        epub.write_epub(str(output_path), book, {})
-        _scrub_epub_for_kindle(output_path)
+    # Write EPUB and apply Kindle compatibility fixes
+    epub.write_epub(str(output_path), book, {})
+    _scrub_epub_for_kindle(output_path)
 
     return output_path

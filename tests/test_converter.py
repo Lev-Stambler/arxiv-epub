@@ -214,9 +214,12 @@ class TestEpubKindleCompatibility:
                 for name in zf.namelist():
                     if name.endswith(".xhtml"):
                         content = zf.read(name).decode("utf-8")
-                        assert '<?xml version="1.0" encoding="utf-8"?>' in content, (
-                            f"{name} missing UTF-8 encoding declaration"
+                        # Both single and double quotes are valid XML
+                        has_encoding = (
+                            '<?xml version="1.0" encoding="utf-8"?>' in content
+                            or "<?xml version='1.0' encoding='utf-8'?>" in content
                         )
+                        assert has_encoding, f"{name} missing UTF-8 encoding declaration"
 
     def test_opf_has_language_metadata(self, sample_paper: Paper) -> None:
         """Test that OPF file has dc:language metadata for Kindle."""

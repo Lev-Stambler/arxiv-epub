@@ -11,8 +11,53 @@ from bs4 import BeautifulSoup
 from ebooklib import epub
 
 from arxiv_to_ereader.math_renderer import MathImage, render_latex_to_image
-from arxiv_to_ereader.parser import Paper
+from arxiv_to_ereader.parser import Footnote, Paper
 from arxiv_to_ereader.styles import get_cover_css, get_stylesheet
+
+
+def _collect_ids_from_html(html_content: str) -> set[str]:
+    """Collect all element IDs from HTML content."""
+    if not html_content:
+        return set()
+    soup = BeautifulSoup(html_content, "lxml")
+    return {elem["id"] for elem in soup.find_all(attrs={"id": True})}
+
+
+def _rewrite_internal_links(
+    html_content: str,
+    current_filename: str,
+    id_to_filename: dict[str, str],
+) -> str:
+    """Rewrite internal links to point to the correct file.
+
+    When content is split across multiple XHTML files, links like #bib.bibx9
+    must become references.xhtml#bib.bibx9 to work correctly in EPUBs.
+    """
+    if not html_content:
+        return html_content
+
+    soup = BeautifulSoup(html_content, "lxml")
+    modified = False
+
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if href.startswith("#") and len(href) > 1:
+            target_id = href[1:]
+            if target_id in id_to_filename:
+                target_file = id_to_filename[target_id]
+                # Only rewrite if target is in a different file
+                if target_file != current_filename:
+                    a["href"] = f"{target_file}#{target_id}"
+                    modified = True
+
+    if modified:
+        # Return content without <html><body> wrappers if they were added by parser
+        body = soup.find("body")
+        if body:
+            return "".join(str(child) for child in body.children)
+        return str(soup)
+
+    return html_content
 
 
 def validate_epub(epub_path: Path) -> tuple[bool, list[str]]:
@@ -84,6 +129,7 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
     3. Missing dc:language metadata
     4. <img> tags without src attributes
     5. Remaining MathML elements (we render to images, but catch any stragglers)
+    6. External HTTP(S) links (may cause Send to Kindle rejection)
 
     Based on: https://kindle-epub-fix.netlify.app/
 
@@ -151,6 +197,14 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
                         else:
                             math.decompose()
                         soup_modified = True
+
+                    # Fix 6: Remove external HTTP(S) links (may cause Kindle rejection)
+                    for a in soup.find_all("a", href=True):
+                        href = a.get("href", "")
+                        if href.startswith(("http://", "https://")):
+                            # Remove href but keep the link text
+                            del a["href"]
+                            soup_modified = True
 
                     if soup_modified:
                         text = str(soup)
@@ -550,17 +604,59 @@ def convert_to_epub(
                 image_url_to_epub_path[original_src] = img_filename
                 image_url_to_epub_path[absolute_url] = img_filename
 
+    # Build map of all IDs to their destination filenames for cross-file link fixing
+    # This is essential because Amazon's Send to Kindle rejects EPUBs with broken internal links
+    id_to_filename: dict[str, str] = {}
+
+    # Map references IDs (e.g., bib.bibx1, bib.bibx2, etc.)
+    refs_filename = "references.xhtml"
+    if paper.references_html:
+        for elem_id in _collect_ids_from_html(paper.references_html):
+            id_to_filename[elem_id] = refs_filename
+
+    # Map footnotes IDs (e.g., fn-1, fn-2, etc.)
+    footnotes_filename = "footnotes.xhtml"
+    if paper.footnotes:
+        for fn in paper.footnotes:
+            id_to_filename[fn.id] = footnotes_filename
+
+    # Map section IDs and all IDs inside each section
+    section_filenames: list[str] = []
+    for i, section in enumerate(paper.sections):
+        filename = f"section_{i:02d}.xhtml"
+        section_filenames.append(filename)
+
+        # Section ID itself
+        id_to_filename[section.id] = filename
+
+        # IDs inside the section content
+        for elem_id in _collect_ids_from_html(section.content):
+            id_to_filename[elem_id] = filename
+
+    # Also add back-reference IDs for footnotes (fnref-X)
+    if paper.footnotes:
+        for fn in paper.footnotes:
+            back_id = f"fnref-{fn.index}"
+            # Back-references are in section files, but we don't know which one
+            # They'll be rewritten correctly when we process each section
+
     # Track rendered math images across all sections
     math_images: dict[str, MathImage] = {}
 
     # Sections
     for i, section in enumerate(paper.sections):
+        # Get the filename for this section
+        current_filename = section_filenames[i]
+
         # Update image URLs in section content
         content = section.content
         for old_url, new_path in image_url_to_epub_path.items():
             # Replace in both quote styles
             content = content.replace(f'src="{old_url}"', f'src="{new_path}"')
             content = content.replace(f"src='{old_url}'", f"src='{new_path}'")
+
+        # Fix cross-file internal links (e.g., #bib.bibx9 -> references.xhtml#bib.bibx9)
+        content = _rewrite_internal_links(content, current_filename, id_to_filename)
 
         # Convert math to images if enabled
         if render_math:
@@ -588,13 +684,20 @@ def convert_to_epub(
 
     # References
     if paper.references_html:
-        refs_chapter = _create_references_chapter(paper.references_html, stylesheet)
+        # Rewrite any internal links in references (e.g., back-links to sections)
+        refs_html = _rewrite_internal_links(paper.references_html, refs_filename, id_to_filename)
+        refs_chapter = _create_references_chapter(refs_html, stylesheet)
         book.add_item(refs_chapter)
         chapters.append(refs_chapter)
 
     # Footnotes (if any were extracted)
     if paper.footnotes:
-        footnotes_chapter = _create_footnotes_chapter(paper.footnotes, stylesheet)
+        # Rewrite back-links in footnotes to point to correct section files
+        rewritten_footnotes = []
+        for fn in paper.footnotes:
+            rewritten_content = _rewrite_internal_links(fn.content, footnotes_filename, id_to_filename)
+            rewritten_footnotes.append(Footnote(id=fn.id, index=fn.index, content=rewritten_content))
+        footnotes_chapter = _create_footnotes_chapter(rewritten_footnotes, stylesheet)
         book.add_item(footnotes_chapter)
         chapters.append(footnotes_chapter)
 

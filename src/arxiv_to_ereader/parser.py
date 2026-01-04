@@ -87,7 +87,53 @@ def _process_content(soup_fragment: Tag, footnote_counter: list[int]) -> tuple[s
                 tag[k] = v
         return tag
 
-    # 0. Clean up image alt text - remove useless "Refer to caption" placeholder
+    # 0. Convert algorithm SVGs to HTML blocks
+    # LaTeXML renders algorithms as SVG with foreignobject, which has transform issues in PDF
+    for svg in soup_fragment.select("svg.ltx_picture"):
+        foreignobjects = svg.find_all("foreignobject")
+        if not foreignobjects:
+            continue
+
+        # Check if this looks like an algorithm (has "Algorithm" in first foreignobject)
+        first_fo = foreignobjects[0]
+        first_content = first_fo.find(class_="ltx_foreignobject_content")
+        if not first_content:
+            continue
+
+        first_text = first_content.get_text(strip=True)
+        if not first_text.lower().startswith("algorithm"):
+            continue
+
+        # Extract title and body from foreignobjects
+        title_html = str(first_content)
+        body_parts = []
+        for fo in foreignobjects[1:]:
+            content = fo.find(class_="ltx_foreignobject_content")
+            if content:
+                body_parts.append(str(content))
+
+        # Create algorithm HTML block
+        algo_div = new_tag("div", {"class": "algorithm-block"})
+        title_div = new_tag("div", {"class": "algorithm-title"})
+        title_div.append(BeautifulSoup(title_html, "lxml").body.contents[0] if BeautifulSoup(title_html, "lxml").body else "")
+        algo_div.append(title_div)
+
+        body_div = new_tag("div", {"class": "algorithm-body"})
+        for part in body_parts:
+            parsed = BeautifulSoup(part, "lxml")
+            if parsed.body:
+                for child in parsed.body.contents:
+                    body_div.append(child)
+        algo_div.append(body_div)
+
+        # Replace the figure containing the SVG with the algorithm block
+        figure = svg.find_parent("figure")
+        if figure:
+            figure.replace_with(algo_div)
+        else:
+            svg.replace_with(algo_div)
+
+    # 0b. Clean up image alt text - remove useless "Refer to caption" placeholder
     for img in soup_fragment.find_all("img"):
         alt = img.get("alt", "")
         if alt.lower() in ["refer to caption", "refer to caption."]:

@@ -404,7 +404,35 @@ svg foreignobject {{
     display: block;
 }}
 
-/* Algorithm boxes */
+/* Algorithm boxes - converted from SVG to HTML */
+.algorithm-block {{
+    margin: 14pt 0;
+    padding: 10pt;
+    background: #f5f5f5;
+    border: 1pt solid #999;
+    border-radius: 4pt;
+    page-break-inside: avoid;
+}}
+
+.algorithm-title {{
+    font-weight: bold;
+    font-size: {preset.base_font_pt * 1.05}pt;
+    margin-bottom: 8pt;
+    padding-bottom: 6pt;
+    border-bottom: 0.5pt solid #ccc;
+}}
+
+.algorithm-body {{
+    font-size: {preset.base_font_pt * 0.95}pt;
+    line-height: 1.6;
+}}
+
+.algorithm-body .ltx_p {{
+    margin: 4pt 0;
+    text-indent: 0;
+}}
+
+/* Fallback for SVG algorithms that weren't converted */
 .ltx_figure svg {{
     max-width: 100%;
     height: auto;

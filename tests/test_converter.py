@@ -142,9 +142,10 @@ class TestPdfContent:
             result = convert_to_pdf(sample_paper, output_path, download_images=False)
 
             reader = PdfReader(result)
-            # Check first page for title
-            first_page_text = reader.pages[0].extract_text()
-            assert sample_paper.title in first_page_text, "Title not found in PDF"
+            # Check first page for title (normalize whitespace for comparison)
+            first_page_text = " ".join(reader.pages[0].extract_text().split())
+            normalized_title = " ".join(sample_paper.title.split())
+            assert normalized_title in first_page_text, "Title not found in PDF"
 
 
 class TestMathRendering:

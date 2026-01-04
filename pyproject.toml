@@ -86,5 +86,6 @@ exclude_lines = [
 [dependency-groups]
 dev = [
     "playwright>=1.57.0",
+    "pypdf>=6.5.0",
     "pytest-playwright>=0.7.2",
 ]

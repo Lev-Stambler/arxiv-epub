@@ -210,7 +210,7 @@ def convert_to_pdf(
             # Wait for any async content to load
             page.wait_for_load_state("networkidle")
 
-            # Generate PDF with custom page size
+            # Generate PDF with custom page size and document outline for navigation
             page.pdf(
                 path=str(output_path),
                 width=f"{width_inches}in",
@@ -222,6 +222,8 @@ def convert_to_pdf(
                     "right": "6mm",
                 },
                 print_background=True,
+                tagged=True,  # Generate tagged/accessible PDF
+                outline=True,  # Generate bookmarks from headings for Kindle navigation
             )
 
             browser.close()

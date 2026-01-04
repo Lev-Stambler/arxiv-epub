@@ -1,11 +1,11 @@
-"""Streamlit web interface for arxiv-to-ereader."""
+"""Streamlit web interface for arxiv-ereader."""
 
 import tempfile
 from pathlib import Path
 
 import streamlit as st
 
-from arxiv_to_ereader.converter import convert_to_epub, validate_epub
+from arxiv_to_ereader.converter import convert_to_pdf
 from arxiv_to_ereader.fetcher import (
     ArxivFetchError,
     ArxivHTMLNotAvailable,
@@ -13,6 +13,7 @@ from arxiv_to_ereader.fetcher import (
     normalize_arxiv_id,
 )
 from arxiv_to_ereader.parser import parse_paper
+from arxiv_to_ereader.screen_presets import SCREEN_PRESETS
 
 st.set_page_config(
     page_title="arXiv to E-Reader",
@@ -22,7 +23,7 @@ st.set_page_config(
 
 st.title("📚 arXiv to E-Reader Converter")
 st.markdown(
-    "Convert arXiv papers to EPUB format for easy reading on your e-reader."
+    "Convert arXiv papers to PDF format optimized for your e-reader."
 )
 
 # Input section
@@ -55,10 +56,12 @@ st.subheader("Options")
 col1, col2 = st.columns(2)
 
 with col1:
-    style_preset = st.selectbox(
-        "Style preset",
-        ["default", "compact", "large-text"],
-        help="Choose a style preset for the ebook",
+    preset_options = {name: f"{preset.description}" for name, preset in SCREEN_PRESETS.items()}
+    screen_preset = st.selectbox(
+        "Screen preset",
+        options=list(preset_options.keys()),
+        format_func=lambda x: f"{x} - {preset_options[x]}",
+        help="Choose a screen size preset for your e-reader",
     )
 
 with col2:
@@ -69,7 +72,7 @@ with col2:
     )
 
 # Convert button
-if st.button("Convert to EPUB", type="primary", disabled=not paper_inputs):
+if st.button("Convert to PDF", type="primary", disabled=not paper_inputs):
     results = []
 
     progress_bar = st.progress(0)
@@ -92,21 +95,18 @@ if st.button("Convert to EPUB", type="primary", disabled=not paper_inputs):
             status_text.text(f"Parsing {paper_id}...")
             paper = parse_paper(html, paper_id)
 
-            # Convert to EPUB
-            status_text.text(f"Converting {paper_id} to EPUB...")
+            # Convert to PDF
+            status_text.text(f"Converting {paper_id} to PDF...")
 
-            with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                 output_path = Path(tmp.name)
 
-            ebook_path = convert_to_epub(
+            pdf_path = convert_to_pdf(
                 paper,
                 output_path=output_path,
-                style_preset=style_preset,
+                screen_preset=screen_preset,
                 download_images=download_images,
             )
-
-            # Validate EPUB
-            is_valid, validation_errors = validate_epub(ebook_path)
 
             results.append(
                 {
@@ -114,9 +114,7 @@ if st.button("Convert to EPUB", type="primary", disabled=not paper_inputs):
                     "paper_id": paper_id,
                     "title": paper.title,
                     "authors": paper.authors,
-                    "path": ebook_path,
-                    "validation_passed": is_valid,
-                    "validation_errors": validation_errors,
+                    "path": pdf_path,
                 }
             )
 
@@ -148,27 +146,15 @@ if st.button("Convert to EPUB", type="primary", disabled=not paper_inputs):
         if result["success"]:
             st.success(f"✅ {result['paper_id']}: {result['title']}")
 
-            # Show validation warning if applicable
-            if not result.get("validation_passed", True):
-                st.warning(
-                    "⚠️ **EPUB Validation Failed** - This file may be rejected by Send to Kindle. "
-                    f"({len(result.get('validation_errors', []))} errors detected)"
-                )
-                with st.expander("Show validation errors"):
-                    for error in result.get("validation_errors", [])[:10]:
-                        st.code(error)
-                    if len(result.get("validation_errors", [])) > 10:
-                        st.write(f"... and {len(result['validation_errors']) - 10} more errors")
-
             # Read file and provide download
             with open(result["path"], "rb") as f:
-                ebook_data = f.read()
+                pdf_data = f.read()
 
             st.download_button(
-                label=f"📥 Download {result['paper_id']}.epub",
-                data=ebook_data,
-                file_name=f"{result['paper_id'].replace('/', '_')}.epub",
-                mime="application/epub+zip",
+                label=f"📥 Download {result['paper_id']}.pdf",
+                data=pdf_data,
+                file_name=f"{result['paper_id'].replace('/', '_')}.pdf",
+                mime="application/pdf",
             )
 
             with st.expander("Paper details"):

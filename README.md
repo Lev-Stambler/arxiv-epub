@@ -1,8 +1,6 @@
-# arxiv-to-ereader
+# arxiv-ereader
 
-Convert arXiv HTML papers to EPUB and Kindle formats (MOBI, AZW3) for easy reading on e-readers.
-
-![Demo](demo.gif)
+Convert arXiv HTML papers to PDF optimized for e-readers (Kindle, Kobo, reMarkable).
 
 ## Quick Start
 
@@ -12,11 +10,11 @@ git clone https://github.com/Lev-Stambler/arxiv-to-ereader.git
 cd arxiv-to-ereader
 uv sync
 
-# Convert a paper to EPUB
-uv run arxiv-to-ereader 2402.08954
+# Convert a paper to PDF (default: Kindle Paperwhite)
+uv run arxiv-ereader 2402.08954
 
-# Convert to native Kindle format (requires Calibre)
-uv run arxiv-to-ereader 2402.08954 --format azw3
+# Convert for Kindle Scribe
+uv run arxiv-ereader 2402.08954 --screen kindle-scribe
 
 # Or use the web interface
 uv sync --extra web
@@ -25,18 +23,14 @@ uv run streamlit run src/arxiv_to_ereader/web.py
 
 ## Features
 
-- **Multiple Formats**: Output to EPUB, MOBI, or AZW3 (native Kindle format)
-- **Math Rendering**: LaTeX equations converted to images with proper baseline alignment for Kindle compatibility
+- **Screen Presets**: Optimized page sizes for popular e-readers (Kindle, Kobo, reMarkable)
+- **Math Rendering**: LaTeX equations converted to images with proper baseline alignment
 - **Simple CLI**: Convert papers with a single command
 - **Batch Processing**: Convert multiple papers at once
-- **Web Interface**: Optional Streamlit UI for non-technical users
-- **Responsive Design**: Optimized CSS for Kindle devices (Paperwhite, Oasis, Fire)
-- **Flexible Input**: Accepts arXiv IDs or URLs
-- **Multiple Styles**: Choose from default, compact, or large-text presets
+- **Web Interface**: Optional Streamlit UI
+- **Custom Dimensions**: Specify exact page dimensions in mm
 
 ## Installation
-
-### From source
 
 ```bash
 git clone https://github.com/Lev-Stambler/arxiv-to-ereader.git
@@ -44,16 +38,17 @@ cd arxiv-to-ereader
 uv sync
 ```
 
-### Kindle Format Support (Optional)
+### System Dependencies
 
-To convert to native Kindle formats (MOBI/AZW3), install [Calibre](https://calibre-ebook.com/download):
+WeasyPrint requires some system libraries. On most systems these are already installed:
 
 ```bash
-# macOS
-brew install calibre
-
 # Ubuntu/Debian
-sudo apt install calibre
+sudo apt install libpango-1.0-0 libpangocairo-1.0-0
+
+# macOS (usually no extra deps needed)
+# Fedora
+sudo dnf install pango
 ```
 
 ## Usage
@@ -61,116 +56,93 @@ sudo apt install calibre
 ### Command Line
 
 ```bash
-# Convert a single paper to EPUB (default)
-uv run arxiv-to-ereader 2402.08954
+# Convert a single paper (default preset: kindle-paperwhite)
+uv run arxiv-ereader 2402.08954
 
-# Convert to native Kindle format (AZW3 - recommended for Kindle)
-uv run arxiv-to-ereader 2402.08954 --format azw3
+# List available screen presets
+uv run arxiv-ereader --list-screens
 
-# Convert to MOBI format
-uv run arxiv-to-ereader 2402.08954 --format mobi
+# Use a specific preset
+uv run arxiv-ereader 2402.08954 --screen kindle-scribe
+uv run arxiv-ereader 2402.08954 --screen remarkable
+uv run arxiv-ereader 2402.08954 --screen kobo-libra
+
+# Custom page dimensions (in mm)
+uv run arxiv-ereader 2402.08954 --width 150 --height 200
 
 # Convert from URL
-uv run arxiv-to-ereader https://arxiv.org/abs/2402.08954
+uv run arxiv-ereader https://arxiv.org/abs/2402.08954
 
 # Convert multiple papers
-uv run arxiv-to-ereader 2402.08954 2401.12345 2312.00001 -f azw3
+uv run arxiv-ereader 2402.08954 2401.12345 2312.00001
 
 # Specify output directory
-uv run arxiv-to-ereader 2402.08954 -o ~/kindle-papers/ -f azw3
-
-# Use a different style preset
-uv run arxiv-to-ereader 2402.08954 --style large-text
+uv run arxiv-ereader 2402.08954 -o ~/papers/
 
 # Skip images for faster/smaller files
-uv run arxiv-to-ereader 2402.08954 --no-images
+uv run arxiv-ereader 2402.08954 --no-images
 
-# Keep MathML instead of rendering to images (not recommended for Kindle)
-uv run arxiv-to-ereader 2402.08954 --no-math-images
-
-# Increase math image resolution for larger screens
-uv run arxiv-to-ereader 2402.08954 --math-dpi 200
+# Increase math image resolution
+uv run arxiv-ereader 2402.08954 --math-dpi 300
 
 # Use arXiv ID for filename instead of paper title
-uv run arxiv-to-ereader 2402.08954 --use-id
+uv run arxiv-ereader 2402.08954 --use-id
 ```
 
-### Output Formats
+### Screen Presets
 
-| Format | Extension | Description |
-|--------|-----------|-------------|
-| `epub` | `.epub` | Universal e-book format (default) |
-| `azw3` | `.azw3` | Native Kindle format (KF8) - recommended for Kindle |
-| `mobi` | `.mobi` | Legacy Kindle format |
-
-**Note**: AZW3 is the recommended format for Kindle devices as it supports the latest Kindle features and typography.
-
-### Style Presets
-
-- `default`: Balanced readability for most devices
-- `compact`: Smaller text, more content per page
-- `large-text`: Larger text for easier reading
+| Preset | Device | Dimensions |
+|--------|--------|------------|
+| `kindle-paperwhite` | Kindle Paperwhite 6.8" (2021+) | 105x140mm |
+| `kindle-paperwhite-6` | Kindle Paperwhite 6" (older) | 91x123mm |
+| `kindle-scribe` | Kindle Scribe 10.2" | 158x210mm |
+| `kobo-clara` | Kobo Clara 6" | 91x123mm |
+| `kobo-libra` | Kobo Libra 7" | 107x142mm |
+| `remarkable` | reMarkable 2 10.3" | 158x210mm |
+| `a5` | A5 paper size | 148x210mm |
 
 ### Web Interface
-
-![Web Interface](demo-web.gif)
-
-Run the web interface locally:
 
 ```bash
 uv sync --extra web
 uv run streamlit run src/arxiv_to_ereader/web.py
 ```
 
-The web interface supports:
-- Single or batch paper conversion
-- Format selection (EPUB, MOBI, AZW3)
-- Style presets
-- Image inclusion toggle
-
 ## Python API
 
 ```python
-from arxiv_to_ereader import fetch_paper, parse_paper, convert_to_epub, OutputFormat
+from arxiv_ereader import fetch_paper, parse_paper, convert_to_pdf, SCREEN_PRESETS
 
-# Fetch and convert a paper to EPUB
+# Fetch and convert a paper
 paper_id, html = fetch_paper("2402.08954")
 paper = parse_paper(html, paper_id)
-epub_path = convert_to_epub(paper, output_path="paper.epub")
 
-# Convert to native Kindle format (AZW3) with math as images
-azw3_path = convert_to_epub(
+# Convert with default preset (kindle-paperwhite)
+pdf_path = convert_to_pdf(paper, output_path="paper.pdf")
+
+# Convert for Kindle Scribe
+pdf_path = convert_to_pdf(
     paper,
-    output_path="paper.azw3",
-    output_format=OutputFormat.AZW3,
-    render_math=True,  # Convert LaTeX to images (default)
-    math_dpi=150,      # Image resolution
+    output_path="paper.pdf",
+    screen_preset="kindle-scribe",
 )
 
-# Keep MathML (for EPUB readers that support it)
-epub_path = convert_to_epub(
+# Custom dimensions
+pdf_path = convert_to_pdf(
     paper,
-    output_path="paper.epub",
-    render_math=False,
+    output_path="paper.pdf",
+    custom_width_mm=150,
+    custom_height_mm=200,
 )
 
-print(f"Created: {azw3_path}")
+print(f"Created: {pdf_path}")
 print(f"Title: {paper.title}")
-print(f"Authors: {', '.join(paper.authors)}")
 ```
 
 ## Requirements
 
 - Python 3.10+
 - arXiv papers with HTML version available (papers submitted after Dec 2023)
-- [Calibre](https://calibre-ebook.com/download) (optional, for MOBI/AZW3 conversion)
-
-## Limitations
-
-- Only works with arXiv papers that have HTML versions
-- Papers submitted before December 2023 may not have HTML available
-- Very complex LaTeX equations may fall back to simplified rendering
-- MOBI/AZW3 conversion requires Calibre to be installed
 
 ## Development
 
@@ -193,40 +165,14 @@ uv run ruff check src tests
 
 1. **Fetch**: Downloads the HTML version of the paper from arXiv
 2. **Parse**: Extracts title, authors, abstract, sections, figures, and references
-3. **Render Math**: Converts LaTeX equations to PNG images using matplotlib with proper baseline alignment for inline math
-4. **Convert**: Creates an EPUB file using ebooklib with responsive CSS styling
-5. **Transform** (optional): Converts EPUB to Kindle formats using Calibre
+3. **Render Math**: Converts LaTeX equations to PNG images using matplotlib
+4. **Generate PDF**: Creates a PDF using WeasyPrint with CSS optimized for the target screen size
 
-The generated ebook includes:
-- Cover page with title, authors, and paper ID
-- Abstract
-- All paper sections with math equations rendered as images
-- Embedded figures (optional)
-- Footnotes
-- References
-- Responsive CSS optimized for e-reader devices
+## Limitations
 
-Output files are named after the paper title by default (use `--use-id` for arXiv ID-based filenames).
-
-## Known Limitations
-
-Conversion doesn't always succeed perfectly. Some papers may have:
-- Complex LaTeX that matplotlib's mathtext engine can't render
-- Unusual HTML structures that don't parse correctly
-- Missing or malformed metadata
-
-**Validate your EPUB** using [epubcheck](https://www.w3.org/publishing/epubcheck/):
-
-```bash
-# Install epubcheck (requires Java)
-# macOS: brew install epubcheck
-# Or download from: https://www.w3.org/publishing/epubcheck/
-
-# Validate an EPUB file
-epubcheck your_paper.epub
-```
-
-If you encounter issues with a specific paper, please [open an issue](https://github.com/Lev-Stambler/arxiv-to-ereader/issues) with the arXiv ID.
+- Only works with arXiv papers that have HTML versions
+- Papers submitted before December 2023 may not have HTML available
+- Very complex LaTeX equations may fall back to simplified rendering
 
 ## License
 
@@ -235,27 +181,6 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Credits
 
 - [arXiv](https://arxiv.org) for providing HTML versions of papers
-- [ebooklib](https://github.com/aerkalov/ebooklib) for EPUB generation
+- [WeasyPrint](https://weasyprint.org/) for PDF generation
 - [matplotlib](https://matplotlib.org) for LaTeX equation rendering
-- [Calibre](https://calibre-ebook.com) for Kindle format conversion
 - [LaTeXML](https://dlmf.nist.gov/LaTeXML/) which powers arXiv's HTML conversion
-
-## Recording the Demos
-
-The CLI demo is recorded using [VHS](https://github.com/charmbracelet/vhs):
-
-```bash
-# Install VHS (https://github.com/charmbracelet/vhs#installation)
-vhs demo-quick.tape    # Quick CLI demo (no network)
-vhs demo.tape          # Full CLI demo (requires network)
-```
-
-The web demo is recorded using Playwright:
-
-```bash
-uv run python scripts/record_web_demo.py
-```
-
-## Disclaimer
-
-This software is provided "as is", without warranty of any kind. The authors are not liable for any damages or issues arising from the use of this software. This tool is for personal use and research purposes. Please respect arXiv's terms of service and rate limits.

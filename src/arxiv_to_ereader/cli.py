@@ -1,4 +1,4 @@
-"""Command-line interface for arxiv-to-ereader."""
+"""Command-line interface for arxiv-ereader."""
 
 import asyncio
 import re
@@ -10,7 +10,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from arxiv_to_ereader import __version__
-from arxiv_to_ereader.converter import convert_to_epub, validate_epub
+from arxiv_to_ereader.converter import convert_to_pdf
 from arxiv_to_ereader.fetcher import (
     ArxivFetchError,
     ArxivHTMLNotAvailable,
@@ -19,7 +19,7 @@ from arxiv_to_ereader.fetcher import (
     normalize_arxiv_id,
 )
 from arxiv_to_ereader.parser import parse_paper
-
+from arxiv_to_ereader.screen_presets import SCREEN_PRESETS
 
 
 def sanitize_filename(title: str, max_length: int = 80) -> str:
@@ -32,29 +32,22 @@ def sanitize_filename(title: str, max_length: int = 80) -> str:
     Returns:
         A sanitized filename-safe string (Linux/macOS/Windows compatible)
     """
-    # Replace colons with dashes
     filename = title.replace(":", "-")
-    # Replace slashes and backslashes with dashes
     filename = filename.replace("/", "-").replace("\\", "-")
-    # Remove or replace other unsafe characters (Windows/Linux problematic)
     filename = re.sub(r'[<>"|?*\x00-\x1f]', "", filename)
-    # Replace spaces and other whitespace with underscores
     filename = re.sub(r"[\s]+", "_", filename)
-    # Replace multiple dashes/underscores with single
     filename = re.sub(r"[-]+", "-", filename)
     filename = re.sub(r"[_]+", "_", filename)
-    # Remove combinations like _- or -_
     filename = re.sub(r"[-_]{2,}", "_", filename)
-    # Strip leading/trailing underscores and dashes
     filename = filename.strip("_-")
-    # Truncate if too long (leave room for extension)
     if len(filename) > max_length:
         filename = filename[:max_length].rsplit("_", 1)[0].strip("_-")
     return filename or "paper"
 
+
 app = typer.Typer(
-    name="arxiv-to-ereader",
-    help="Convert arXiv HTML papers to EPUB and Kindle formats.",
+    name="arxiv-ereader",
+    help="Convert arXiv HTML papers to PDF optimized for e-readers.",
     add_completion=False,
 )
 console = Console()
@@ -63,7 +56,16 @@ console = Console()
 def version_callback(value: bool) -> None:
     """Print version and exit."""
     if value:
-        console.print(f"arxiv-to-ereader version {__version__}")
+        console.print(f"arxiv-ereader version {__version__}")
+        raise typer.Exit()
+
+
+def list_screens_callback(value: bool) -> None:
+    """List available screen presets and exit."""
+    if value:
+        console.print("[bold]Available screen presets:[/bold]")
+        for name, preset in SCREEN_PRESETS.items():
+            console.print(f"  [cyan]{name}[/cyan]: {preset.description} ({preset.width_mm}x{preset.height_mm}mm)")
         raise typer.Exit()
 
 
@@ -80,17 +82,31 @@ def convert(
         typer.Option(
             "--output",
             "-o",
-            help="Output directory for ebook files",
+            help="Output directory for PDF files",
         ),
     ] = None,
-    style: Annotated[
+    screen: Annotated[
         str,
         typer.Option(
-            "--style",
+            "--screen",
             "-s",
-            help="Style preset: default, compact, or large-text",
+            help="E-reader screen preset (use --list-screens to see options)",
         ),
-    ] = "default",
+    ] = "kindle-paperwhite",
+    width: Annotated[
+        float | None,
+        typer.Option(
+            "--width",
+            help="Custom page width in mm (requires --height)",
+        ),
+    ] = None,
+    height: Annotated[
+        float | None,
+        typer.Option(
+            "--height",
+            help="Custom page height in mm (requires --width)",
+        ),
+    ] = None,
     no_images: Annotated[
         bool,
         typer.Option(
@@ -102,7 +118,7 @@ def convert(
         bool,
         typer.Option(
             "--no-math-images",
-            help="Don't render math equations as images (keep MathML, may not display on Kindle)",
+            help="Don't render math equations as images",
         ),
     ] = False,
     math_dpi: Annotated[
@@ -119,6 +135,15 @@ def convert(
             help="Use arXiv ID for filename instead of paper title",
         ),
     ] = False,
+    list_screens: Annotated[
+        bool | None,
+        typer.Option(
+            "--list-screens",
+            callback=list_screens_callback,
+            is_eager=True,
+            help="List available screen presets and exit",
+        ),
+    ] = None,
     version: Annotated[
         bool | None,
         typer.Option(
@@ -130,18 +155,28 @@ def convert(
         ),
     ] = None,
 ) -> None:
-    """Convert arXiv papers to EPUB format.
+    """Convert arXiv papers to PDF format optimized for e-readers.
 
     Examples:
 
-        arxiv-to-ereader 2402.08954
+        arxiv-ereader 2402.08954
 
-        arxiv-to-ereader 2402.08954 2401.12345 -o ~/kindle/
+        arxiv-ereader 2402.08954 2401.12345 -o ~/papers/
 
-        arxiv-to-ereader https://arxiv.org/abs/2402.08954 --style large-text
+        arxiv-ereader https://arxiv.org/abs/2402.08954 --screen kindle-scribe
+
+        arxiv-ereader 2402.08954 --width 150 --height 200
     """
-    if style not in ("default", "compact", "large-text"):
-        console.print(f"[red]Error:[/red] Invalid style '{style}'. Use default, compact, or large-text.")
+    # Validate screen preset or custom dimensions
+    if (width is not None) != (height is not None):
+        console.print("[red]Error:[/red] Both --width and --height must be specified together")
+        raise typer.Exit(1)
+
+    if width is None and screen not in SCREEN_PRESETS:
+        available = ", ".join(SCREEN_PRESETS.keys())
+        console.print(f"[red]Error:[/red] Unknown screen preset '{screen}'.")
+        console.print(f"Available presets: {available}")
+        console.print("Use --list-screens to see details, or specify --width and --height for custom size.")
         raise typer.Exit(1)
 
     # Create output directory if specified
@@ -150,15 +185,23 @@ def convert(
 
     # Process single paper or batch
     if len(papers) == 1:
-        _convert_single(papers[0], output, style, not no_images, not no_math_images, math_dpi, use_id)
+        _convert_single(
+            papers[0], output, screen, width, height,
+            not no_images, not no_math_images, math_dpi, use_id
+        )
     else:
-        _convert_batch(papers, output, style, not no_images, not no_math_images, math_dpi, use_id)
+        _convert_batch(
+            papers, output, screen, width, height,
+            not no_images, not no_math_images, math_dpi, use_id
+        )
 
 
 def _convert_single(
     paper_input: str,
     output_dir: Path | None,
-    style: str,
+    screen: str,
+    width: float | None,
+    height: float | None,
     download_images: bool,
     render_math: bool,
     math_dpi: int,
@@ -196,24 +239,26 @@ def _convert_single(
         # Parse HTML
         paper = parse_paper(html, paper_id)
 
-        progress.update(task, description=f"Converting {paper_id} to EPUB...")
+        progress.update(task, description=f"Converting {paper_id} to PDF...")
 
-        # Determine output path - use paper title by default, arXiv ID if --use-id
+        # Determine output path
         if use_id:
-            filename = paper_id.replace('/', '_')
+            filename = paper_id.replace("/", "_")
         else:
             filename = sanitize_filename(paper.title)
 
         if output_dir:
-            output_path = output_dir / f"{filename}.epub"
+            output_path = output_dir / f"{filename}.pdf"
         else:
-            output_path = Path(f"{filename}.epub")
+            output_path = Path(f"{filename}.pdf")
 
-        # Convert to EPUB
-        ebook_path = convert_to_epub(
+        # Convert to PDF
+        pdf_path = convert_to_pdf(
             paper,
             output_path=output_path,
-            style_preset=style,
+            screen_preset=screen,
+            custom_width_mm=width,
+            custom_height_mm=height,
             download_images=download_images,
             render_math=render_math,
             math_dpi=math_dpi,
@@ -221,33 +266,24 @@ def _convert_single(
 
         progress.stop()
 
-    console.print(f"[green]Success![/green] Created: {ebook_path}")
+    console.print(f"[green]Success![/green] Created: {pdf_path}")
     console.print(f"  Title: {paper.title}")
     console.print(f"  Authors: {', '.join(paper.authors)}")
-
-    # Validate EPUB
-    is_valid, errors = validate_epub(ebook_path)
-    if not is_valid:
-        console.print()
-        console.print("[bold yellow]WARNING: EPUB validation failed![/bold yellow]")
-        console.print("[yellow]This EPUB may be rejected by Send to Kindle.[/yellow]")
-        for error in errors[:5]:  # Show first 5 errors
-            console.print(f"[dim]  {error}[/dim]")
-        if len(errors) > 5:
-            console.print(f"[dim]  ... and {len(errors) - 5} more errors[/dim]")
 
 
 def _convert_batch(
     paper_inputs: list[str],
     output_dir: Path | None,
-    style: str,
+    screen: str,
+    width: float | None,
+    height: float | None,
     download_images: bool,
     render_math: bool,
     math_dpi: int,
     use_id: bool,
 ) -> None:
     """Convert multiple papers."""
-    console.print(f"Converting {len(paper_inputs)} papers to EPUB...")
+    console.print(f"Converting {len(paper_inputs)} papers to PDF...")
 
     # Fetch all papers concurrently
     with Progress(
@@ -276,34 +312,30 @@ def _convert_batch(
             # Parse HTML
             paper = parse_paper(html, paper_id)
 
-            # Determine output path - use paper title by default, arXiv ID if --use-id
+            # Determine output path
             if use_id:
-                filename = paper_id.replace('/', '_')
+                filename = paper_id.replace("/", "_")
             else:
                 filename = sanitize_filename(paper.title)
 
             if output_dir:
-                output_path = output_dir / f"{filename}.epub"
+                output_path = output_dir / f"{filename}.pdf"
             else:
-                output_path = Path(f"{filename}.epub")
+                output_path = Path(f"{filename}.pdf")
 
-            # Convert to EPUB
-            ebook_path = convert_to_epub(
+            # Convert to PDF
+            pdf_path = convert_to_pdf(
                 paper,
                 output_path=output_path,
-                style_preset=style,
+                screen_preset=screen,
+                custom_width_mm=width,
+                custom_height_mm=height,
                 download_images=download_images,
                 render_math=render_math,
                 math_dpi=math_dpi,
             )
 
-            console.print(f"[green]Created:[/green] {ebook_path}")
-
-            # Validate EPUB
-            is_valid, errors = validate_epub(ebook_path)
-            if not is_valid:
-                console.print(f"  [yellow]WARNING: Validation failed ({len(errors)} errors)[/yellow]")
-
+            console.print(f"[green]Created:[/green] {pdf_path}")
             success_count += 1
 
         except Exception as e:

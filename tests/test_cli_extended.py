@@ -53,8 +53,8 @@ class TestCLIConversion:
             assert "Test Paper Title" in result.stdout
 
             # Check file was created
-            epub_files = list(Path(tmpdir).glob("*.epub"))
-            assert len(epub_files) == 1
+            pdf_files = list(Path(tmpdir).glob("*.pdf"))
+            assert len(pdf_files) == 1
 
     @respx.mock
     def test_convert_single_paper_not_found(self) -> None:
@@ -70,18 +70,18 @@ class TestCLIConversion:
         assert "not available" in result.stdout.lower()
 
     @respx.mock
-    def test_convert_with_style_preset(self) -> None:
-        """Test converting with different style presets."""
+    def test_convert_with_screen_preset(self) -> None:
+        """Test converting with different screen presets."""
         paper_id = "2402.08954"
         respx.get(f"https://arxiv.org/html/{paper_id}").mock(
             return_value=Response(200, text=SAMPLE_HTML)
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            for style in ["default", "compact", "large-text"]:
+            for screen in ["kindle-paperwhite", "kindle-scribe", "remarkable"]:
                 result = runner.invoke(
                     app,
-                    [paper_id, "-o", tmpdir, "--style", style, "--no-images"],
+                    [paper_id, "-o", tmpdir, "--screen", screen, "--no-images"],
                 )
                 # Each should succeed (may overwrite same file)
                 assert result.exit_code == 0
@@ -97,6 +97,23 @@ class TestCLIConversion:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             result = runner.invoke(app, [url, "-o", tmpdir, "--no-images"])
+
+            assert result.exit_code == 0
+            assert "Success" in result.stdout
+
+    @respx.mock
+    def test_convert_with_custom_dimensions(self) -> None:
+        """Test converting with custom page dimensions."""
+        paper_id = "2402.08954"
+        respx.get(f"https://arxiv.org/html/{paper_id}").mock(
+            return_value=Response(200, text=SAMPLE_HTML)
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = runner.invoke(
+                app,
+                [paper_id, "-o", tmpdir, "--width", "150", "--height", "200", "--no-images"],
+            )
 
             assert result.exit_code == 0
             assert "Success" in result.stdout
@@ -125,8 +142,8 @@ class TestCLIBatchConversion:
             assert "2 succeeded" in result.stdout
 
             # Check files were created with arXiv IDs
-            epub_files = list(Path(tmpdir).glob("*.epub"))
-            assert len(epub_files) == 2
+            pdf_files = list(Path(tmpdir).glob("*.pdf"))
+            assert len(pdf_files) == 2
 
     @respx.mock
     def test_batch_convert_partial_failure(self) -> None:

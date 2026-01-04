@@ -28,13 +28,31 @@ class TestCLI:
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
         assert "arXiv" in result.stdout
-        assert "EPUB" in result.stdout
+        assert "PDF" in result.stdout
 
-    def test_invalid_style(self) -> None:
-        """Test that invalid style preset is rejected."""
-        result = runner.invoke(app, ["2402.08954", "--style", "invalid"])
+    def test_list_screens(self) -> None:
+        """Test --list-screens flag."""
+        result = runner.invoke(app, ["--list-screens"])
+        assert result.exit_code == 0
+        assert "kindle-paperwhite" in result.stdout
+        assert "kindle-scribe" in result.stdout
+        assert "kobo" in result.stdout
+
+    def test_invalid_screen(self) -> None:
+        """Test that invalid screen preset is rejected."""
+        result = runner.invoke(app, ["2402.08954", "--screen", "invalid-screen"])
         assert result.exit_code == 1
-        assert "Invalid style" in result.stdout
+        assert "Unknown screen preset" in result.stdout
+
+    def test_custom_dimensions_require_both(self) -> None:
+        """Test that --width requires --height and vice versa."""
+        result = runner.invoke(app, ["2402.08954", "--width", "100"])
+        assert result.exit_code == 1
+        assert "Both --width and --height" in result.stdout
+
+        result = runner.invoke(app, ["2402.08954", "--height", "150"])
+        assert result.exit_code == 1
+        assert "Both --width and --height" in result.stdout
 
     def test_no_papers_provided(self) -> None:
         """Test that no arguments shows help or error."""
@@ -59,12 +77,18 @@ class TestCLIArgumentParsing:
         result = runner.invoke(app, ["--help"])
         assert "--output" in result.stdout or "-o" in result.stdout
 
-    def test_style_option(self) -> None:
-        """Test --style option is accepted."""
+    def test_screen_option(self) -> None:
+        """Test --screen option is accepted."""
         result = runner.invoke(app, ["--help"])
-        assert "--style" in result.stdout
+        assert "--screen" in result.stdout
 
     def test_no_images_option(self) -> None:
         """Test --no-images option is accepted."""
         result = runner.invoke(app, ["--help"])
         assert "--no-images" in result.stdout
+
+    def test_width_height_options(self) -> None:
+        """Test --width and --height options are accepted."""
+        result = runner.invoke(app, ["--help"])
+        assert "--width" in result.stdout
+        assert "--height" in result.stdout

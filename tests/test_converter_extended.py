@@ -1,7 +1,6 @@
 """Extended converter tests."""
 
 import tempfile
-import zipfile
 from pathlib import Path
 
 import pytest
@@ -11,7 +10,7 @@ from httpx import Response
 from arxiv_to_ereader.converter import (
     _convert_math_to_images,
     _download_image,
-    convert_to_epub,
+    convert_to_pdf,
 )
 from arxiv_to_ereader.parser import Figure, Footnote, Paper, Section
 
@@ -122,17 +121,12 @@ class TestConverterWithImages:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "test.epub"
-            result = convert_to_epub(paper, output_path, download_images=True)
+            output_path = Path(tmpdir) / "test.pdf"
+            result = convert_to_pdf(paper, output_path, download_images=True)
 
             assert result.exists()
-
-            # Check image is in EPUB
-            import zipfile
-
-            with zipfile.ZipFile(result, "r") as zf:
-                image_files = [n for n in zf.namelist() if "images/" in n]
-                assert len(image_files) == 1
+            # PDF with images should be larger
+            assert result.stat().st_size > 1000
 
     @respx.mock
     def test_convert_with_missing_images(self) -> None:
@@ -158,9 +152,9 @@ class TestConverterWithImages:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "test.epub"
+            output_path = Path(tmpdir) / "test.pdf"
             # Should not raise, just skip the image
-            result = convert_to_epub(paper, output_path, download_images=True)
+            result = convert_to_pdf(paper, output_path, download_images=True)
             assert result.exists()
 
 
@@ -180,8 +174,8 @@ class TestConverterEdgeCases:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "test.epub"
-            result = convert_to_epub(paper, output_path, download_images=False)
+            output_path = Path(tmpdir) / "test.pdf"
+            result = convert_to_pdf(paper, output_path, download_images=False)
             assert result.exists()
 
     def test_convert_paper_without_sections(self) -> None:
@@ -195,8 +189,8 @@ class TestConverterEdgeCases:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "test.epub"
-            result = convert_to_epub(paper, output_path, download_images=False)
+            output_path = Path(tmpdir) / "test.pdf"
+            result = convert_to_pdf(paper, output_path, download_images=False)
             assert result.exists()
 
     def test_convert_paper_without_references(self) -> None:
@@ -211,8 +205,8 @@ class TestConverterEdgeCases:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "test.epub"
-            result = convert_to_epub(paper, output_path, download_images=False)
+            output_path = Path(tmpdir) / "test.pdf"
+            result = convert_to_pdf(paper, output_path, download_images=False)
             assert result.exists()
 
     def test_convert_paper_without_date(self) -> None:
@@ -227,8 +221,8 @@ class TestConverterEdgeCases:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "test.epub"
-            result = convert_to_epub(paper, output_path, download_images=False)
+            output_path = Path(tmpdir) / "test.pdf"
+            result = convert_to_pdf(paper, output_path, download_images=False)
             assert result.exists()
 
     def test_convert_paper_with_old_format_id(self) -> None:
@@ -242,13 +236,12 @@ class TestConverterEdgeCases:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Don't specify output path to test default naming
             import os
 
             original_cwd = os.getcwd()
             try:
                 os.chdir(tmpdir)
-                result = convert_to_epub(paper, download_images=False)
+                result = convert_to_pdf(paper, download_images=False)
                 assert result.exists()
                 # Filename should have slash replaced
                 assert "hep-th_9901001" in result.name
@@ -301,7 +294,6 @@ class TestMathConversion:
         assert 'class="math-block-img"' in result
         assert 'class="math-image math-display"' in result
         # The display img should NOT have inline vertical-align style
-        # (it's centered in a block div instead)
         import re
         display_img = re.search(r'<img[^>]*class="math-image math-display"[^>]*>', result)
         assert display_img is not None
@@ -321,68 +313,6 @@ class TestMathConversion:
         depth_value = float(match.group(1))
         # Subscripts extend below baseline, should be negative
         assert depth_value < 0
-
-    def test_epub_preserves_inline_math_styles(self) -> None:
-        """Test that EPUB output preserves inline math class and style attributes.
-
-        This is a regression test for the bug where Calibre scrubbing was
-        stripping inline styles needed for math baseline alignment.
-        """
-        paper = Paper(
-            id="test.00001",
-            title="Inline Math Test",
-            authors=["Author"],
-            abstract="Testing inline math",
-            sections=[
-                Section(
-                    id="S1",
-                    title="Math Section",
-                    level=1,
-                    content='<p>The value <math alttext="x_i" display="inline"><mi>x</mi></math> is important.</p>',
-                )
-            ],
-        )
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "inline_math_test.epub"
-            result = convert_to_epub(
-                paper,
-                output_path,
-                download_images=False,
-                render_math=True,
-            )
-
-            assert result.exists()
-
-            # Check that inline math styles are preserved in the EPUB
-            with zipfile.ZipFile(result, "r") as zf:
-                # Find section file
-                section_files = [n for n in zf.namelist() if "section_" in n]
-                assert len(section_files) >= 1
-
-                content = zf.read(section_files[0]).decode("utf-8")
-
-                # Must have math-inline class (not just math-image)
-                assert 'class="math-image math-inline"' in content, (
-                    "Inline math missing 'math-inline' class"
-                )
-
-                # Must have vertical-align style
-                assert "vertical-align:" in content, (
-                    "Inline math missing vertical-align style"
-                )
-
-                # Must have height constraint for inline math
-                assert "height: 1em" in content, (
-                    "Inline math missing height constraint"
-                )
-
-                # Verify the style has vertical-align with em units
-                import re
-                match = re.search(r'vertical-align:\s*(-?[\d.]+)em', content)
-                assert match is not None, (
-                    f"vertical-align style not found or malformed in: {content}"
-                )
 
     def test_convert_math_to_images_display(self) -> None:
         """Test converting display math to images."""
@@ -438,8 +368,8 @@ class TestMathConversion:
         assert 'Regular text here.' in result
         assert 'More text.' in result
 
-    def test_epub_with_math_rendering_enabled(self) -> None:
-        """Test full EPUB conversion with math rendering (display math only)."""
+    def test_pdf_with_math_rendering_enabled(self) -> None:
+        """Test full PDF conversion with math rendering (display math only)."""
         paper = Paper(
             id="test.00001",
             title="Math Paper",
@@ -456,8 +386,8 @@ class TestMathConversion:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "math_test.epub"
-            result = convert_to_epub(
+            output_path = Path(tmpdir) / "math_test.pdf"
+            result = convert_to_pdf(
                 paper,
                 output_path,
                 download_images=False,
@@ -466,14 +396,10 @@ class TestMathConversion:
             )
 
             assert result.exists()
+            assert result.stat().st_size > 1000
 
-            # Check that math images are in the EPUB
-            with zipfile.ZipFile(result, "r") as zf:
-                math_files = [n for n in zf.namelist() if "math/" in n]
-                assert len(math_files) >= 1
-
-    def test_epub_with_math_rendering_disabled(self) -> None:
-        """Test EPUB conversion with math rendering disabled."""
+    def test_pdf_with_math_rendering_disabled(self) -> None:
+        """Test PDF conversion with math rendering disabled."""
         paper = Paper(
             id="test.00001",
             title="Math Paper",
@@ -490,8 +416,8 @@ class TestMathConversion:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "no_math_test.epub"
-            result = convert_to_epub(
+            output_path = Path(tmpdir) / "no_math_test.pdf"
+            result = convert_to_pdf(
                 paper,
                 output_path,
                 download_images=False,
@@ -500,17 +426,12 @@ class TestMathConversion:
 
             assert result.exists()
 
-            # Math images should NOT be in the EPUB
-            with zipfile.ZipFile(result, "r") as zf:
-                math_files = [n for n in zf.namelist() if "math/" in n]
-                assert len(math_files) == 0
-
 
 class TestFootnotesConversion:
     """Tests for footnotes in converter."""
 
-    def test_epub_with_footnotes(self) -> None:
-        """Test EPUB generation with footnotes."""
+    def test_pdf_with_footnotes(self) -> None:
+        """Test PDF generation with footnotes."""
         paper = Paper(
             id="test.00001",
             title="Paper with Footnotes",
@@ -530,13 +451,8 @@ class TestFootnotesConversion:
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "footnotes_test.epub"
-            result = convert_to_epub(paper, output_path, download_images=False)
+            output_path = Path(tmpdir) / "footnotes_test.pdf"
+            result = convert_to_pdf(paper, output_path, download_images=False)
 
             assert result.exists()
-
-            # Check footnotes chapter exists
-            with zipfile.ZipFile(result, "r") as zf:
-                assert "EPUB/footnotes.xhtml" in zf.namelist()
-                footnotes_content = zf.read("EPUB/footnotes.xhtml").decode("utf-8")
-                assert "This is a footnote." in footnotes_content
+            assert result.stat().st_size > 1000

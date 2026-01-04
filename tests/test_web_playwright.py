@@ -97,14 +97,14 @@ class TestStreamlitUI:
         input_field = page.get_by_placeholder("e.g., 2402.08954")
         expect(input_field).to_be_visible()
 
-    def test_style_preset_dropdown(self, page: Page, streamlit_server: str) -> None:
-        """Test that style preset dropdown exists."""
+    def test_screen_preset_dropdown(self, page: Page, streamlit_server: str) -> None:
+        """Test that screen preset dropdown exists."""
         page.goto(streamlit_server)
         page.wait_for_load_state("networkidle")
 
         # Look for the selectbox label
-        style_label = page.get_by_text("Style preset")
-        expect(style_label).to_be_visible()
+        screen_label = page.get_by_text("Screen preset")
+        expect(screen_label).to_be_visible()
 
     def test_include_images_checkbox(self, page: Page, streamlit_server: str) -> None:
         """Test that include images checkbox exists."""
@@ -119,7 +119,7 @@ class TestStreamlitUI:
         page.goto(streamlit_server)
         page.wait_for_load_state("networkidle")
 
-        convert_button = page.get_by_role("button", name="Convert to EPUB")
+        convert_button = page.get_by_role("button", name="Convert to PDF")
         expect(convert_button).to_be_visible()
 
     def test_convert_button_disabled_without_input(
@@ -129,7 +129,7 @@ class TestStreamlitUI:
         page.goto(streamlit_server)
         page.wait_for_load_state("networkidle")
 
-        convert_button = page.get_by_role("button", name="Convert to EPUB")
+        convert_button = page.get_by_role("button", name="Convert to PDF")
         expect(convert_button).to_be_disabled()
 
     def test_footer_links(self, page: Page, streamlit_server: str) -> None:
@@ -179,7 +179,7 @@ class TestStreamlitInteraction:
         page.wait_for_timeout(1000)
 
         # Button should now be enabled
-        convert_button = page.get_by_role("button", name="Convert to EPUB")
+        convert_button = page.get_by_role("button", name="Convert to PDF")
         expect(convert_button).to_be_enabled()
 
 
@@ -196,7 +196,7 @@ class TestStreamlitResponsive:
         header = page.locator("h1").first
         expect(header).to_be_visible()
 
-        convert_button = page.get_by_role("button", name="Convert to EPUB")
+        convert_button = page.get_by_role("button", name="Convert to PDF")
         expect(convert_button).to_be_visible()
 
     def test_tablet_viewport(self, page: Page, streamlit_server: str) -> None:

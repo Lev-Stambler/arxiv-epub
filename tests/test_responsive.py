@@ -14,18 +14,11 @@ from arxiv_to_ereader.styles import get_pdf_stylesheet
 class TestPdfStylesheet:
     """Tests for PDF stylesheet generation."""
 
-    def test_stylesheet_contains_page_rule(self) -> None:
-        """Test that stylesheet includes @page CSS rule."""
+    def test_stylesheet_contains_print_media(self) -> None:
+        """Test that stylesheet includes @media print rule for browser rendering."""
         preset = get_preset("kindle-paperwhite")
         css = get_pdf_stylesheet(preset)
-        assert "@page" in css
-
-    def test_stylesheet_sets_page_size(self) -> None:
-        """Test that stylesheet sets page size in mm."""
-        preset = get_preset("kindle-paperwhite")
-        css = get_pdf_stylesheet(preset)
-        assert f"{preset.width_mm}mm" in css
-        assert f"{preset.height_mm}mm" in css
+        assert "@media print" in css
 
     def test_stylesheet_uses_base_font(self) -> None:
         """Test that stylesheet uses preset's base font size."""
@@ -39,18 +32,18 @@ class TestPdfStylesheet:
         css = get_pdf_stylesheet(preset)
         assert "max-width: 100%" in css or "max-width:100%" in css
 
-    def test_different_presets_different_sizes(self) -> None:
-        """Test that different presets have different page sizes."""
+    def test_different_presets_different_fonts(self) -> None:
+        """Test that different presets have different base font sizes."""
         paperwhite = get_preset("kindle-paperwhite")
         scribe = get_preset("kindle-scribe")
 
         css_pw = get_pdf_stylesheet(paperwhite)
         css_sc = get_pdf_stylesheet(scribe)
 
-        # Kindle Scribe is larger
-        assert f"{scribe.width_mm}mm" in css_sc
-        assert f"{paperwhite.width_mm}mm" in css_pw
-        assert scribe.width_mm > paperwhite.width_mm
+        # Kindle Scribe uses larger font
+        assert f"{scribe.base_font_pt}pt" in css_sc
+        assert f"{paperwhite.base_font_pt}pt" in css_pw
+        assert scribe.base_font_pt >= paperwhite.base_font_pt
 
 
 class TestScreenPresets:

@@ -1,94 +1,15 @@
-"""Convert parsed papers to PDF format optimized for e-readers."""
+"""Convert parsed papers to PDF format optimized for e-readers using Playwright."""
 
 import base64
-from io import BytesIO
+import tempfile
 from pathlib import Path
 
 import httpx
-from bs4 import BeautifulSoup
-from weasyprint import CSS, HTML
+from playwright.sync_api import sync_playwright
 
-from arxiv_to_ereader.math_renderer import MathImage, render_latex_to_image
 from arxiv_to_ereader.parser import Paper
 from arxiv_to_ereader.screen_presets import ScreenPreset, custom_preset, get_preset
 from arxiv_to_ereader.styles import get_pdf_stylesheet
-
-
-def _convert_math_to_images(
-    html_content: str,
-    math_images: dict[str, MathImage],
-    dpi: int = 200,
-) -> tuple[str, dict[str, MathImage]]:
-    """Convert all math elements in HTML content to images.
-
-    Finds MathML elements, extracts their LaTeX, renders to images,
-    and replaces them with <img> tags.
-
-    Args:
-        html_content: HTML content with math elements
-        math_images: Dictionary to accumulate rendered math images (modified in place)
-        dpi: Resolution for rendered math images
-
-    Returns:
-        Tuple of (modified_html, math_images)
-    """
-    soup = BeautifulSoup(html_content, "lxml")
-
-    for math_elem in soup.find_all("math"):
-        display = math_elem.get("display", "inline")
-        is_display = display == "block"
-
-        # Extract LaTeX from alttext or annotation
-        latex = None
-        alttext = math_elem.get("alttext")
-        if alttext:
-            latex = alttext
-        else:
-            annotation = math_elem.select_one('annotation[encoding="application/x-tex"]')
-            if annotation:
-                latex = annotation.get_text()
-
-        if not latex:
-            continue
-
-        # Check if we already rendered this equation
-        if latex in math_images:
-            math_img = math_images[latex]
-        else:
-            math_img = render_latex_to_image(latex, dpi=dpi, is_display=is_display)
-            if math_img:
-                math_images[latex] = math_img
-
-        if math_img:
-            # Create img tag with base64 data URI
-            b64_data = base64.b64encode(math_img.image_data).decode("ascii")
-            img_tag = soup.new_tag("img")
-            img_tag["src"] = f"data:{math_img.image_type};base64,{b64_data}"
-            img_tag["alt"] = latex[:200] if len(latex) > 200 else latex
-            img_tag["class"] = "math-image math-display" if is_display else "math-image math-inline"
-
-            if is_display:
-                wrapper = soup.new_tag("div")
-                wrapper["class"] = "math-block-img"
-                wrapper.append(img_tag)
-                math_elem.replace_with(wrapper)
-            else:
-                style_parts = [
-                    "display: inline",
-                    "height: 1em",
-                    "max-height: 1.3em",
-                    "width: auto",
-                    "margin: 0",
-                ]
-                if math_img.depth_em != 0:
-                    style_parts.append(f"vertical-align: {math_img.depth_em:.2f}em")
-                img_tag["style"] = "; ".join(style_parts) + ";"
-                math_elem.replace_with(img_tag)
-
-    body = soup.find("body")
-    if body:
-        return "".join(str(child) for child in body.children), math_images
-    return str(soup), math_images
 
 
 def _download_image(url: str, timeout: float = 30.0) -> tuple[bytes, str] | None:
@@ -110,22 +31,18 @@ def _download_image(url: str, timeout: float = 30.0) -> tuple[bytes, str] | None
 def _build_html_document(
     paper: Paper,
     image_map: dict[str, str],
-    render_math: bool = True,
-    math_dpi: int = 200,
+    preset: ScreenPreset,
 ) -> str:
     """Build a complete HTML document from the Paper object.
 
     Args:
         paper: Parsed Paper object
         image_map: Map of original image URLs to base64 data URIs
-        render_math: Whether to convert math to images
-        math_dpi: DPI for math images
+        preset: Screen preset for styling
 
     Returns:
         Complete HTML document as string
     """
-    math_images: dict[str, MathImage] = {}
-
     # Build sections HTML
     sections_html = ""
     for section in paper.sections:
@@ -135,10 +52,6 @@ def _build_html_document(
         for old_url, new_src in image_map.items():
             content = content.replace(f'src="{old_url}"', f'src="{new_src}"')
             content = content.replace(f"src='{old_url}'", f"src='{new_src}'")
-
-        # Convert math to images if enabled
-        if render_math:
-            content, math_images = _convert_math_to_images(content, math_images, dpi=math_dpi)
 
         level = min(section.level + 1, 6)
         sections_html += f"""
@@ -166,9 +79,6 @@ def _build_html_document(
         refs_content = paper.references_html
         for old_url, new_src in image_map.items():
             refs_content = refs_content.replace(f'src="{old_url}"', f'src="{new_src}"')
-        # Convert math in references
-        if render_math:
-            refs_content, math_images = _convert_math_to_images(refs_content, math_images, dpi=math_dpi)
         references_html = f"""
         <section class="references">
             <h2>References</h2>
@@ -180,12 +90,8 @@ def _build_html_document(
     if paper.footnotes:
         footnotes_items = []
         for fn in paper.footnotes:
-            fn_content = fn.content
-            # Convert math in footnotes
-            if render_math:
-                fn_content, math_images = _convert_math_to_images(fn_content, math_images, dpi=math_dpi)
             footnotes_items.append(
-                f'<li id="{fn.id}">{fn_content} <a href="#fnref-{fn.index}" class="footnote-back">^</a></li>'
+                f'<li id="{fn.id}">{fn.content} <a href="#fnref-{fn.index}" class="footnote-back">^</a></li>'
             )
         footnotes_list = "\n".join(footnotes_items)
         footnotes_html = f"""
@@ -195,11 +101,17 @@ def _build_html_document(
         </section>
         """
 
+    # Get CSS
+    css_content = get_pdf_stylesheet(preset)
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8"/>
     <title>{paper.title}</title>
+    <style>
+{css_content}
+    </style>
 </head>
 <body>
     <div class="cover">
@@ -229,10 +141,12 @@ def convert_to_pdf(
     custom_width_mm: float | None = None,
     custom_height_mm: float | None = None,
     download_images: bool = True,
-    render_math: bool = True,
-    math_dpi: int = 200,
 ) -> Path:
     """Convert a parsed paper to PDF format optimized for e-readers.
+
+    Uses Playwright (headless Chromium) for rendering, which provides native
+    MathML support for math equations - the same rendering as viewing arXiv
+    HTML in a browser.
 
     Args:
         paper: Parsed Paper object
@@ -241,8 +155,6 @@ def convert_to_pdf(
         custom_width_mm: Custom page width in mm (overrides preset)
         custom_height_mm: Custom page height in mm (overrides preset)
         download_images: Whether to download and embed images
-        render_math: Whether to convert math equations to images
-        math_dpi: DPI for rendered math images
 
     Returns:
         Path to the created PDF file
@@ -266,15 +178,7 @@ def convert_to_pdf(
                 image_map[absolute_url] = data_uri
 
     # Build HTML document
-    html_content = _build_html_document(
-        paper,
-        image_map,
-        render_math=render_math,
-        math_dpi=math_dpi,
-    )
-
-    # Get CSS
-    css_content = get_pdf_stylesheet(preset)
+    html_content = _build_html_document(paper, image_map, preset)
 
     # Determine output path
     if output_path is None:
@@ -286,9 +190,43 @@ def convert_to_pdf(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Generate PDF with WeasyPrint
-    html = HTML(string=html_content, base_url=paper.base_url)
-    css = CSS(string=css_content)
-    html.write_pdf(str(output_path), stylesheets=[css])
+    # Convert mm to inches for Playwright (1 inch = 25.4 mm)
+    width_inches = preset.width_mm / 25.4
+    height_inches = preset.height_mm / 25.4
+
+    # Write HTML to temp file and render with Playwright
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
+        f.write(html_content)
+        temp_html_path = f.name
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+
+            # Load the HTML file
+            page.goto(f"file://{temp_html_path}")
+
+            # Wait for any async content to load
+            page.wait_for_load_state("networkidle")
+
+            # Generate PDF with custom page size
+            page.pdf(
+                path=str(output_path),
+                width=f"{width_inches}in",
+                height=f"{height_inches}in",
+                margin={
+                    "top": "8mm",
+                    "bottom": "10mm",
+                    "left": "6mm",
+                    "right": "6mm",
+                },
+                print_background=True,
+            )
+
+            browser.close()
+    finally:
+        # Clean up temp file
+        Path(temp_html_path).unlink(missing_ok=True)
 
     return output_path

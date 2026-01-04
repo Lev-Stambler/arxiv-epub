@@ -148,10 +148,10 @@ class TestPdfContent:
 
 
 class TestMathRendering:
-    """Tests for math equation rendering in PDF."""
+    """Tests for math equation rendering in PDF (native MathML via browser)."""
 
-    def test_math_rendering_enabled(self) -> None:
-        """Test that math rendering produces valid PDF."""
+    def test_math_rendering(self) -> None:
+        """Test that MathML renders correctly in PDF."""
         paper_with_math = Paper(
             id="test.math",
             title="Math Test",
@@ -174,7 +174,7 @@ class TestMathRendering:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test.pdf"
             result = convert_to_pdf(
-                paper_with_math, output_path, download_images=False, render_math=True
+                paper_with_math, output_path, download_images=False
             )
 
             assert result.exists()
@@ -202,7 +202,7 @@ class TestRealPaperIntegration:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test.pdf"
             result = convert_to_pdf(
-                paper, output_path, download_images=False, render_math=True
+                paper, output_path, download_images=False
             )
 
             assert result.exists()
@@ -230,7 +230,7 @@ class TestRealPaperIntegration:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "test_with_images.pdf"
             result = convert_to_pdf(
-                paper, output_path, download_images=True, render_math=True
+                paper, output_path, download_images=True
             )
 
             assert result.exists()

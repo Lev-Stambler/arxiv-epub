@@ -8,7 +8,6 @@ import respx
 from httpx import Response
 
 from arxiv_to_ereader.converter import (
-    _convert_math_to_images,
     _download_image,
     convert_to_pdf,
 )
@@ -249,127 +248,11 @@ class TestConverterEdgeCases:
                 os.chdir(original_cwd)
 
 
-class TestMathConversion:
-    """Tests for math-to-image conversion in converter."""
+class TestMathMLRendering:
+    """Tests for native MathML rendering via Playwright."""
 
-    def test_convert_math_to_images_inline(self) -> None:
-        """Test that inline math IS converted to images with vertical-align style."""
-        html = '<p>The formula <math alttext="x + y" display="inline"><mi>x</mi></math> is simple.</p>'
-        math_images: dict = {}
-
-        result, math_images = _convert_math_to_images(html, math_images)
-
-        # Inline math should be converted to images
-        assert len(math_images) == 1
-        # Should have img tag with math-inline class
-        assert '<img' in result
-        assert 'class="math-image math-inline"' in result
-        # Should have vertical-align style for baseline alignment
-        assert 'style=' in result
-        assert 'vertical-align:' in result
-
-    def test_convert_math_inline_vertical_align_format(self) -> None:
-        """Test that vertical-align style has correct CSS format."""
-        html = '<p><math alttext="x_i" display="inline"><mi>x</mi></math></p>'
-        math_images: dict = {}
-
-        result, math_images = _convert_math_to_images(html, math_images)
-
-        # Check vertical-align has em units
-        import re
-        match = re.search(r'vertical-align:\s*(-?[\d.]+)em', result)
-        assert match is not None, f"vertical-align not found in: {result}"
-        depth_value = float(match.group(1))
-        # Should be a reasonable value (negative for below baseline)
-        assert -2.0 < depth_value < 0.5
-
-    def test_convert_math_display_no_vertical_align(self) -> None:
-        """Test that display math does NOT have vertical-align style."""
-        html = '<div><math alttext="E = mc^2" display="block"><mi>E</mi></math></div>'
-        math_images: dict = {}
-
-        result, math_images = _convert_math_to_images(html, math_images)
-
-        # Display math should be in a wrapper div, not have vertical-align
-        assert 'class="math-block-img"' in result
-        assert 'class="math-image math-display"' in result
-        # The display img should NOT have inline vertical-align style
-        import re
-        display_img = re.search(r'<img[^>]*class="math-image math-display"[^>]*>', result)
-        assert display_img is not None
-        assert 'vertical-align:' not in display_img.group(0)
-
-    def test_convert_math_inline_subscript_has_depth(self) -> None:
-        """Test that subscripts have appropriate vertical alignment."""
-        html = '<p><math alttext="x_i" display="inline"><mi>x</mi></math></p>'
-        math_images: dict = {}
-
-        result, math_images = _convert_math_to_images(html, math_images)
-
-        # Subscripts should have negative vertical-align (below baseline)
-        import re
-        match = re.search(r'vertical-align:\s*(-?[\d.]+)em', result)
-        assert match is not None
-        depth_value = float(match.group(1))
-        # Subscripts extend below baseline, should be negative
-        assert depth_value < 0
-
-    def test_convert_math_to_images_display(self) -> None:
-        """Test converting display math to images."""
-        html = '<div><math alttext="E = mc^2" display="block"><mi>E</mi></math></div>'
-        math_images: dict = {}
-
-        result, math_images = _convert_math_to_images(html, math_images)
-
-        assert len(math_images) == 1
-        assert '<div class="math-block-img">' in result
-        assert 'class="math-image math-display"' in result
-
-    def test_convert_math_deduplicates(self) -> None:
-        """Test that same display math expressions share the same image."""
-        html = '''
-        <div><math alttext="x" display="block"><mi>x</mi></math></div>
-        <div><math alttext="x" display="block"><mi>x</mi></math></div>
-        '''
-        math_images: dict = {}
-
-        result, math_images = _convert_math_to_images(html, math_images)
-
-        # Should only have one image despite two math elements
-        assert len(math_images) == 1
-        # But result should have two img tags
-        assert result.count('<img') == 2
-
-    def test_convert_math_extracts_from_annotation(self) -> None:
-        """Test extracting LaTeX from annotation element (display math only)."""
-        html = '''
-        <math display="block">
-            <semantics>
-                <mi>y</mi>
-                <annotation encoding="application/x-tex">y^2</annotation>
-            </semantics>
-        </math>
-        '''
-        math_images: dict = {}
-
-        result, math_images = _convert_math_to_images(html, math_images)
-
-        assert len(math_images) == 1
-        assert "y^2" in math_images
-
-    def test_convert_math_preserves_non_math_content(self) -> None:
-        """Test that non-math content is preserved."""
-        html = '<p>Regular text here.</p><p>More text.</p>'
-        math_images: dict = {}
-
-        result, math_images = _convert_math_to_images(html, math_images)
-
-        assert len(math_images) == 0
-        assert 'Regular text here.' in result
-        assert 'More text.' in result
-
-    def test_pdf_with_math_rendering_enabled(self) -> None:
-        """Test full PDF conversion with math rendering (display math only)."""
+    def test_pdf_with_inline_math(self) -> None:
+        """Test PDF conversion with inline MathML."""
         paper = Paper(
             id="test.00001",
             title="Math Paper",
@@ -380,7 +263,7 @@ class TestMathConversion:
                     id="S1",
                     title="Introduction",
                     level=1,
-                    content='<div><math alttext="\\alpha + \\beta" display="block"><mi>α</mi></math></div>',
+                    content='<p>Consider <math alttext="x"><mi>x</mi></math> in text.</p>',
                 )
             ],
         )
@@ -391,15 +274,13 @@ class TestMathConversion:
                 paper,
                 output_path,
                 download_images=False,
-                render_math=True,
-                math_dpi=100,
             )
 
             assert result.exists()
             assert result.stat().st_size > 1000
 
-    def test_pdf_with_math_rendering_disabled(self) -> None:
-        """Test PDF conversion with math rendering disabled."""
+    def test_pdf_with_display_math(self) -> None:
+        """Test PDF conversion with display (block) MathML."""
         paper = Paper(
             id="test.00001",
             title="Math Paper",
@@ -410,21 +291,53 @@ class TestMathConversion:
                     id="S1",
                     title="Introduction",
                     level=1,
-                    content='<p>Consider <math alttext="x"><mi>x</mi></math>.</p>',
+                    content='<div><math alttext="\\alpha + \\beta" display="block"><mi>α</mi><mo>+</mo><mi>β</mi></math></div>',
                 )
             ],
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "no_math_test.pdf"
+            output_path = Path(tmpdir) / "math_test.pdf"
             result = convert_to_pdf(
                 paper,
                 output_path,
                 download_images=False,
-                render_math=False,
             )
 
             assert result.exists()
+            assert result.stat().st_size > 1000
+
+    def test_pdf_with_complex_math(self) -> None:
+        """Test PDF conversion with complex MathML expressions."""
+        paper = Paper(
+            id="test.00001",
+            title="Complex Math Paper",
+            authors=["Author"],
+            abstract="A paper with complex math",
+            sections=[
+                Section(
+                    id="S1",
+                    title="Equations",
+                    level=1,
+                    content='''<p>The equation <math display="block">
+                        <mrow>
+                            <mi>E</mi><mo>=</mo><mi>m</mi><msup><mi>c</mi><mn>2</mn></msup>
+                        </mrow>
+                    </math> is famous.</p>''',
+                )
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "complex_math.pdf"
+            result = convert_to_pdf(
+                paper,
+                output_path,
+                download_images=False,
+            )
+
+            assert result.exists()
+            assert result.stat().st_size > 1000
 
 
 class TestFootnotesConversion:

@@ -114,20 +114,6 @@ def convert(
             help="Skip downloading images (faster, smaller files)",
         ),
     ] = False,
-    no_math_images: Annotated[
-        bool,
-        typer.Option(
-            "--no-math-images",
-            help="Don't render math equations as images",
-        ),
-    ] = False,
-    math_dpi: Annotated[
-        int,
-        typer.Option(
-            "--math-dpi",
-            help="DPI resolution for rendered math images (default 200)",
-        ),
-    ] = 200,
     use_id: Annotated[
         bool,
         typer.Option(
@@ -187,12 +173,12 @@ def convert(
     if len(papers) == 1:
         _convert_single(
             papers[0], output, screen, width, height,
-            not no_images, not no_math_images, math_dpi, use_id
+            not no_images, use_id
         )
     else:
         _convert_batch(
             papers, output, screen, width, height,
-            not no_images, not no_math_images, math_dpi, use_id
+            not no_images, use_id
         )
 
 
@@ -203,8 +189,6 @@ def _convert_single(
     width: float | None,
     height: float | None,
     download_images: bool,
-    render_math: bool,
-    math_dpi: int,
     use_id: bool,
 ) -> None:
     """Convert a single paper."""
@@ -260,8 +244,6 @@ def _convert_single(
             custom_width_mm=width,
             custom_height_mm=height,
             download_images=download_images,
-            render_math=render_math,
-            math_dpi=math_dpi,
         )
 
         progress.stop()
@@ -278,8 +260,6 @@ def _convert_batch(
     width: float | None,
     height: float | None,
     download_images: bool,
-    render_math: bool,
-    math_dpi: int,
     use_id: bool,
 ) -> None:
     """Convert multiple papers."""
@@ -331,8 +311,6 @@ def _convert_batch(
                 custom_width_mm=width,
                 custom_height_mm=height,
                 download_images=download_images,
-                render_math=render_math,
-                math_dpi=math_dpi,
             )
 
             console.print(f"[green]Created:[/green] {pdf_path}")

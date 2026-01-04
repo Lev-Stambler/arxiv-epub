@@ -8,6 +8,7 @@ import respx
 from httpx import Response
 
 from arxiv_to_ereader import convert_to_pdf, fetch_paper, parse_paper
+from arxiv_to_ereader.parser import Section
 from arxiv_to_ereader.fetcher import ArxivFetchError, ArxivHTMLNotAvailable
 
 # Realistic arXiv HTML sample

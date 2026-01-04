@@ -1,4 +1,4 @@
-"""PDF styles for e-reader screens."""
+"""PDF styles for e-reader screens (browser-based rendering)."""
 
 from arxiv_to_ereader.screen_presets import ScreenPreset
 
@@ -6,31 +6,16 @@ from arxiv_to_ereader.screen_presets import ScreenPreset
 def get_pdf_stylesheet(preset: ScreenPreset) -> str:
     """Generate CSS for PDF output optimized for a specific screen size.
 
+    This stylesheet is designed for browser-based rendering via Playwright,
+    which provides native MathML support.
+
     Args:
         preset: Screen preset with dimensions and font settings
 
     Returns:
-        Complete CSS stylesheet with @page rules
+        Complete CSS stylesheet
     """
     return f"""
-/* Page setup */
-@page {{
-    size: {preset.width_mm}mm {preset.height_mm}mm;
-    margin: 8mm 6mm 10mm 6mm;
-
-    @bottom-center {{
-        content: counter(page);
-        font-size: 9pt;
-        color: #666;
-    }}
-}}
-
-@page :first {{
-    @bottom-center {{
-        content: none;
-    }}
-}}
-
 /* Reset */
 * {{
     margin: 0;
@@ -231,21 +216,12 @@ li {{
     border-left: 2pt solid #999;
 }}
 
-/* Math images */
-.math-image {{
-    vertical-align: middle;
-    height: auto;
+/* MathML - native browser rendering */
+math {{
+    font-size: 1em;
 }}
 
-.math-image.math-inline {{
-    display: inline;
-    height: 1em;
-    max-height: 1.3em;
-    width: auto;
-    margin: 0;
-}}
-
-.math-block-img {{
+math[display="block"] {{
     display: block;
     text-align: center;
     margin: 12pt 0;
@@ -255,6 +231,7 @@ li {{
 table.ltx_equation, table.ltx_eqn_table {{
     border: none;
     margin: 12pt 0;
+    width: 100%;
 }}
 
 table.ltx_equation td,
@@ -264,10 +241,15 @@ table.ltx_eqn_table td {{
     vertical-align: middle;
 }}
 
+.ltx_eqn_cell {{
+    text-align: center;
+}}
+
 .ltx_eqn_eqno {{
     text-align: right;
     font-size: {preset.base_font_pt * 0.9}pt;
     color: #444;
+    width: 10%;
 }}
 
 /* Citations */
@@ -347,5 +329,25 @@ blockquote {{
 /* Table wrapper */
 .table-wrapper {{
     margin: 12pt 0;
+}}
+
+/* Print-specific */
+@media print {{
+    body {{
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }}
+
+    .cover {{
+        page-break-after: always;
+    }}
+
+    h1, h2, h3, h4, h5, h6 {{
+        page-break-after: avoid;
+    }}
+
+    figure, table, pre {{
+        page-break-inside: avoid;
+    }}
 }}
 """

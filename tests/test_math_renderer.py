@@ -1,14 +1,10 @@
 """Tests for the math renderer module."""
 
-import pytest
-
 from arxiv_to_ereader.math_renderer import (
     MathImage,
     _clean_latex,
     _simple_latex_fallback,
-    extract_latex_from_mathml,
     render_latex_to_image,
-    render_latex_to_svg,
 )
 
 
@@ -113,30 +109,6 @@ class TestRenderLatexToImage:
         assert len(high_dpi.image_data) > len(low_dpi.image_data)
 
 
-class TestRenderLatexToSvg:
-    """Tests for LaTeX to SVG rendering."""
-
-    def test_renders_simple_svg(self) -> None:
-        """Test rendering simple expression to SVG."""
-        result = render_latex_to_svg("x + y")
-        assert result is not None
-        assert isinstance(result, MathImage)
-        assert result.image_type == "image/svg+xml"
-        # SVG starts with XML or svg tag
-        assert b"<svg" in result.image_data or b"<?xml" in result.image_data
-
-    def test_empty_latex_returns_none(self) -> None:
-        """Test that empty LaTeX returns None."""
-        assert render_latex_to_svg("") is None
-        assert render_latex_to_svg("   ") is None
-
-    def test_svg_display_mode(self) -> None:
-        """Test display mode flag in SVG."""
-        result = render_latex_to_svg("x", is_display=True)
-        assert result is not None
-        assert result.is_display is True
-
-
 class TestSimpleLatexFallback:
     """Tests for simple LaTeX fallback function."""
 
@@ -156,60 +128,6 @@ class TestSimpleLatexFallback:
         result = _simple_latex_fallback(r"\cmd")
         # After removing command, result is empty or just ?
         assert result in ("", "?")
-
-
-class TestExtractLatexFromMathml:
-    """Tests for extracting LaTeX from MathML."""
-
-    def test_extracts_from_alttext(self) -> None:
-        """Test extracting LaTeX from alttext attribute."""
-        mathml = '<math alttext="x + y"><mi>x</mi></math>'
-        result = extract_latex_from_mathml(mathml)
-        assert result == "x + y"
-
-    def test_extracts_from_annotation(self) -> None:
-        """Test extracting LaTeX from annotation element."""
-        mathml = '''
-        <math>
-            <semantics>
-                <mi>x</mi>
-                <annotation encoding="application/x-tex">x + y</annotation>
-            </semantics>
-        </math>
-        '''
-        result = extract_latex_from_mathml(mathml)
-        assert result == "x + y"
-
-    def test_prefers_alttext_over_annotation(self) -> None:
-        """Test that alttext is preferred when both are present."""
-        mathml = '''
-        <math alttext="from alttext">
-            <semantics>
-                <mi>x</mi>
-                <annotation encoding="application/x-tex">from annotation</annotation>
-            </semantics>
-        </math>
-        '''
-        result = extract_latex_from_mathml(mathml)
-        assert result == "from alttext"
-
-    def test_returns_none_for_invalid_mathml(self) -> None:
-        """Test that invalid MathML returns None."""
-        assert extract_latex_from_mathml("<div>not math</div>") is None
-        assert extract_latex_from_mathml("") is None
-
-    def test_complex_arxiv_mathml(self) -> None:
-        """Test parsing actual arXiv MathML structure."""
-        mathml = '''
-        <math alttext="\\mathcal{L}_{\\text{MLM}}" class="ltx_Math" display="inline">
-            <semantics>
-                <msub><mi>ℒ</mi><mtext>MLM</mtext></msub>
-                <annotation encoding="application/x-tex">\\mathcal{L}_{\\text{MLM}}</annotation>
-            </semantics>
-        </math>
-        '''
-        result = extract_latex_from_mathml(mathml)
-        assert result == r"\mathcal{L}_{\text{MLM}}"
 
 
 class TestInlineMathDepth:

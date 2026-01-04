@@ -130,6 +130,8 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
     4. <img> tags without src attributes
     5. Remaining MathML elements (we render to images, but catch any stragglers)
     6. External HTTP(S) links (may cause Send to Kindle rejection)
+    7. Anchor tags without href (LaTeXML cross-references break Kindle validation)
+    8. Missing citation markers (ltx_missing_citation elements)
 
     Based on: https://kindle-epub-fix.netlify.app/
 
@@ -205,6 +207,19 @@ def _scrub_epub_for_kindle(epub_path: Path) -> None:
                             # Remove href but keep the link text
                             del a["href"]
                             soup_modified = True
+
+                    # Fix 7: Convert anchor tags without href to spans
+                    # LaTeXML generates anchors without href (class ltx_ref) that break Kindle
+                    for a in soup.find_all("a"):
+                        if not a.get("href"):
+                            a.name = "span"
+                            soup_modified = True
+
+                    # Fix 8: Clean up missing citation markers
+                    for elem in soup.find_all(class_="ltx_missing_citation"):
+                        elem.name = "span"
+                        elem["class"] = ["citation-missing"]
+                        soup_modified = True
 
                     if soup_modified:
                         text = str(soup)
